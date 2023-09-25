@@ -1,8 +1,23 @@
-from ida_name import set_name
+from ida_name import set_name, SN_AUTO
+from ida_bytes import get_flags, has_user_name
 from .heuristics import require_vtable, is_rtti_identified_vtable
+from .funcs import get_thunk_targets, is_stock_function
 
 def set_generated_vtable_name_through_ctor(ctor_func, class_name):
     vtable_ea = require_vtable(ctor_func)
 
     if not is_rtti_identified_vtable(vtable_ea): # shouldn't happen, but let's just add an extra check to be sure
-        set_name(vtable_ea, f'??_7{class_name}@@6B@')
+        set_generated_name(vtable_ea, f'??_7{class_name}@@6B@')
+
+def set_generated_name(ea, name):
+    if not has_user_name(get_flags(ea)):
+        set_name(ea, name, SN_AUTO)
+    else:
+        print(f'warn: Not updating name at {ea:x} to {name} as the existing name is user specified.')
+
+def set_generated_func_name(f, name):
+    for i, f in reversed([*enumerate(reversed([*get_thunk_targets(f)]))]):
+        if is_stock_function(f):
+            break
+
+        set_generated_name(f.start_ea, f"{'j_' * i}{name}")

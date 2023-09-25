@@ -1,12 +1,11 @@
 from ida_bytes import bin_search, BIN_SEARCH_FORWARD
 from ida_segment import get_segm_by_name
 from ida_funcs import get_fchunk
-from ida_name import set_name
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
-from analrangers.lib.funcs import ensure_functions, set_func_name, func_parents, find_implementation, require_function, require_thunk
+from analrangers.lib.funcs import ensure_functions, func_parents, find_implementation, require_function, require_thunk
 from analrangers.lib.heuristics import get_best_class_name, get_getter_xref, guess_constructor_thunk_from_instantiator
 from analrangers.lib.util import get_cstr, class_name_to_backrefs
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor
+from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
 from .report import handle_anal_exceptions
 
 tls_seg = get_segm_by_name('.tls$')
@@ -28,13 +27,13 @@ def handle_func_parent(parent_ea):
 
     class_name, using_fallback_name = get_best_class_name(constructor, service_name_ea, 'services')
 
-    set_name(service_ea, f'?staticClass@{class_name}@@0PEAVGameServiceClass@game@hh@@EA')
-    set_func_name(initializer_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
-    set_func_name(parent_thunk, f'??__EstaticClass@{class_name}@@0VGameServiceClass@game@hh@@B')
+    set_generated_name(service_ea, f'?staticClass@{class_name}@@0PEAVGameServiceClass@game@hh@@EA')
+    set_generated_func_name(initializer_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
+    set_generated_func_name(parent_thunk, f'??__EstaticClass@{class_name}@@0VGameServiceClass@game@hh@@B')
 
     getter_ea = get_getter_xref(service_ea)
     if getter_ea != None:
-        set_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVGameServiceClass@game@hh@@XZ')
+        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVGameServiceClass@game@hh@@XZ')
     else:
         print(f'warn: no GetClass function found for service class at {service_ea:x}')
 

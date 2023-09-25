@@ -10,6 +10,7 @@ from analrangers.informed_analysis.rfl import find_rfl_statics
 from analrangers.informed_analysis.gocs import find_gocs
 from analrangers.informed_analysis.object_classes import find_obj_classes
 # from analrangers.informed_analysis.state_descs import find_state_descs
+# from analrangers.informed_analysis.math_objects import find_common_math_objects
 from analrangers.informed_analysis.report import clear_report, print_report
 
 clear_report()
@@ -17,9 +18,10 @@ clear_report()
 static_initializer_eas = find_static_initializers()
 
 find_services()
-find_rfl_statics()
+find_rfl_statics(static_initializer_eas)
 find_gocs()
 find_obj_classes()
+# find_common_math_objects()
 # find_state_descs(static_initializer_eas)
 
 print_report()

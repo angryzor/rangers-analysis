@@ -1,9 +1,9 @@
-from ida_name import set_name
 from analrangers.lib.util import require_type, require_name_ea
 from analrangers.lib.xrefs import get_safe_crefs_to
 from analrangers.lib.heuristics import get_best_class_name, guess_constructor_thunk_from_instantiator
-from analrangers.lib.funcs import require_thunk, require_function, set_func_name, ensure_functions, find_implementation
+from analrangers.lib.funcs import require_thunk, require_function, ensure_functions, find_implementation
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
+from analrangers.lib.naming import set_generated_func_name, set_generated_name
 from .report import handle_anal_exceptions
 
 rfl_type_info_tif = require_type('hh::ut::StateDesc')
@@ -34,20 +34,20 @@ def handle_state_desc(xref, static_initializers):
 
     # Set desc info
     # force_apply_tinfo(state_desc_ea, state_desc_tif)
-    set_name(state_desc_ea, f'?staticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
+    set_generated_name(state_desc_ea, f'?staticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
 
     # Set instantiator info
-    set_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{backrefs}@PEAVIAllocator@fnd@csl@@@Z')
+    set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{backrefs}@PEAVIAllocator@fnd@csl@@@Z')
     # force_apply_tinfo()
 
     # Set constructor info
-    set_func_name(ctor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+    set_generated_func_name(ctor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
 
     # Set initializer info
-    set_func_name(initializer_thunk, f'??__EstaticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
+    set_generated_func_name(initializer_thunk, f'??__EstaticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
 
     # Set atexit dtor info
-    set_func_name(atexit_dtor, f'??__FstaticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
+    set_generated_func_name(atexit_dtor, f'??__FstaticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
 
 def find_state_descs(static_initializers):
     ctor_ea = require_name_ea('??0StateDescImpl@internal@ut@hh@@QEAA@PEBDP6APEAVStateDesc@23@PEAVIAllocator@fnd@csl@@@ZH@Z')

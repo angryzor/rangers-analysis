@@ -1,4 +1,4 @@
-from ida_bytes import get_strlit_contents, del_items
+from ida_bytes import get_strlit_contents, del_items, bin_search, BIN_SEARCH_FORWARD, calc_max_align, next_not_tail, next_head, is_head, get_flags
 from ida_typeinf import apply_tinfo, TINFO_DEFINITE, tinfo_t, get_idati, BTF_TYPEDEF
 from ida_nalt import STRTYPE_C
 from ida_idaapi import BADADDR
@@ -23,7 +23,25 @@ def force_apply_tinfo_array(ea, tif, count):
 def class_name_to_backrefs(class_name):
     return "".join([str(i) for i in range(1, 1 + len(class_name.split("@")))])
 
+def binsearch_matches(start_ea, end_ea, bts, mask = None, align = None):
+    cur_ea = start_ea
+    while cur_ea < end_ea:
+        match_ea = bin_search(cur_ea, end_ea, bts, mask, BIN_SEARCH_FORWARD, 0)
+        if match_ea == BADADDR:
+            break
 
+        if not align or calc_max_align(match_ea) >= align:
+            yield match_ea
+
+        cur_ea = next_not_tail(match_ea)
+
+def heads(start_ea, end_ea):
+    if is_head(get_flags(start_ea)):
+        yield start_ea
+    
+    while start_ea != BADADDR:
+        start_ea = next_head(start_ea, end_ea)
+        yield start_ea
 
 class CStrNotFoundException(NotFoundException):
     def __init__(self, ctor_func):

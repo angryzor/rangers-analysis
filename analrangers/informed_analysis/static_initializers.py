@@ -1,9 +1,10 @@
-from ida_name import get_name, set_name, SN_AUTO
+from ida_name import get_name
 from ida_bytes import get_qword
 from ida_ua import o_near, o_mem
 from analrangers.lib.ua_data_extraction import read_source_op_addr, read_insn
 from analrangers.lib.funcs import ensure_functions
 from analrangers.lib.util import require_name_ea
+from analrangers.lib.naming import set_generated_name
 from .report import handle_anal_exceptions
 
 atexit_ea = require_name_ea('atexit')
@@ -22,10 +23,10 @@ def handle_static_initializer(ea):
     initializer = ensure_functions(ea)
 
     if is_null_initializer(initializer):
-        set_name(initializer.start_ea, f'nullinitsub_{f"{ea:x}".upper()}', SN_AUTO)
+        set_generated_name(initializer.start_ea, f'nullinitsub_{f"{ea:x}".upper()}')
 
 def find_static_initializers():
-    __scrt_common_main_seh_ea = require_name_ea('__scrt_common_main_seh')
+    __scrt_common_main_seh_ea = require_name_ea('?__scrt_common_main_seh@@YAHXZ')
 
     initializer_list_start = read_source_op_addr(__scrt_common_main_seh_ea + 0x75)
     initializer_list_end = read_source_op_addr(__scrt_common_main_seh_ea + 0x6e)

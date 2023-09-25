@@ -1,13 +1,12 @@
 from ida_bytes import get_qword
-from ida_typeinf import tinfo_t
-from ida_name import set_name, get_name, SN_AUTO
 from analrangers.lib.util import require_type, require_name_ea, require_cstr, force_apply_tinfo, force_apply_tinfo_array, class_name_to_backrefs
 from analrangers.lib.iterators import require_unique, null_terminated_ptr_array_iterator
 from analrangers.lib.heuristics import generated_class_name, get_getter_xref
-from analrangers.lib.funcs import require_function, set_func_name, ensure_functions, require_thunk
-from analrangers.lib.xrefs import get_code_drefs_to
+from analrangers.lib.funcs import require_function, ensure_functions, require_thunk, get_func, find_unique_thunk
+from analrangers.lib.xrefs import get_code_drefs_to, get_data_drefs_to
 from analrangers.lib.require import NotFoundException
 from analrangers.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
+from analrangers.lib.naming import set_generated_func_name, set_generated_name
 from .report import handle_anal_exceptions
 
 rfl_type_info_tif = require_type('hh::fnd::RflTypeInfo')
@@ -27,15 +26,15 @@ def set_rfl_type(type_info_ea):
 
     print(f'info: handling RflTypeInfo at {type_info_ea:x}: {name}')
 
-    set_name(type_info_ea, f'?staticTypeInfo@{class_name}@@0VRflTypeInfo@fnd@hh@@B')
+    set_generated_name(type_info_ea, f'?staticTypeInfo@{class_name}@@0VRflTypeInfo@fnd@hh@@B')
 
     constructor_ea = get_qword(type_info_ea + 0x10)
     finisher_ea = get_qword(type_info_ea + 0x18)
     cleaner_ea = get_qword(type_info_ea + 0x20)
 
-    set_func_name(ensure_functions(constructor_ea), f'?Construct@{class_name}@@CAXPEAU{backrefs}@PEAVIAllocator@fnd@csl@@@Z')
-    set_func_name(ensure_functions(finisher_ea), f'?Finish@{class_name}@@CAXPEAU{backrefs}@@Z')
-    set_func_name(ensure_functions(cleaner_ea), f'?Clean@{class_name}@@CAXPEAU{backrefs}@@Z')
+    set_generated_func_name(ensure_functions(constructor_ea), f'?Construct@{class_name}@@CAXPEAU{backrefs}@PEAVIAllocator@fnd@csl@@@Z')
+    set_generated_func_name(ensure_functions(finisher_ea), f'?Finish@{class_name}@@CAXPEAU{backrefs}@@Z')
+    set_generated_func_name(ensure_functions(cleaner_ea), f'?Clean@{class_name}@@CAXPEAU{backrefs}@@Z')
 
 def handle_rfl_enum_members(enum_members_ea, count):
     force_apply_tinfo_array(enum_members_ea, rfl_enum_member_tif, count)
@@ -80,13 +79,14 @@ def is_valid_xref(xref):
     insn = read_insn(xref)
     return insn.mnem == 'lea' and insn.insn.Op1.reg == 1
 
-def handle_rfl_class(rfl_class_ea):
+
+def handle_rfl_class(static_initializer_eas, rfl_class_ea):
     try:
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
     except NotFoundException as e:
         force_apply_tinfo(rfl_class_ea, rfl_class_tif)
         class_name = generated_class_name(f'unk_{f"{rfl_class_ea:x}".upper()}', 'rfl', 'app')
-        set_name(rfl_class_ea, f'?staticClass@{class_name}@@0VRflClass@fnd@hh@@B', SN_AUTO)
+        set_generated_name(rfl_class_ea, f'?staticClass@{class_name}@@0VRflClass@fnd@hh@@B')
         raise e
 
     initializer_func = require_function(rfl_class_cref)
@@ -102,12 +102,12 @@ def handle_rfl_class(rfl_class_ea):
 
     print(f'info: handling RflClass at {rfl_class_ea:x}: {name}')
 
-    set_name(rfl_class_ea, f'?staticClass@{class_name}@@0VRflClass@fnd@hh@@B')
-    set_func_name(initializer_thunk, f'??__EstaticClass@{class_name}@@0VRflClass@fnd@hh@@B')
+    set_generated_name(rfl_class_ea, f'?staticClass@{class_name}@@0VRflClass@fnd@hh@@B')
+    set_generated_func_name(initializer_thunk, f'??__EstaticClass@{class_name}@@0VRflClass@fnd@hh@@B')
 
     getter_ea = get_getter_xref(rfl_class_ea)
     if getter_ea != None:
-        set_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVRflClass@fnd@hh@@XZ')
+        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVRflClass@fnd@hh@@XZ')
     
     enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20)
     enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28)
@@ -115,22 +115,26 @@ def handle_rfl_class(rfl_class_ea):
     members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30)
     members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38)
 
-    set_name(enums_ea, f'?staticClassEnums@{class_name}@@0QBVRflClassEnum@fnd@hh@@B')
-    set_name(members_ea, f'?staticClassMembers@{class_name}@@0QBVRflClassMember@fnd@hh@@B')
-
     handle_rfl_enums(enums_ea, enums_count)
     handle_rfl_members(members_ea, members_count)
 
+    set_generated_name(enums_ea, f'?staticClassEnums@{class_name}@@0QBVRflClassEnum@fnd@hh@@B')
+    set_generated_name(members_ea, f'?staticClassMembers@{class_name}@@0QBVRflClassMember@fnd@hh@@B')
+
+    if enums_count != 0:
+        enum_ptr_ea = require_unique(f"Can't find an enum assignment for {enums_ea:x}", get_data_drefs_to(enums_ea))
+        members_initializer = require_function(require_unique(f"Can't find an enum assignment for {enums_ea:x}", [*filter(lambda xref: xref in static_initializer_eas, get_code_drefs_to(enum_ptr_ea))]))
+        set_generated_func_name(members_initializer, f'??__EstaticClassMembers@{class_name}@@0QBVRflClassMember@fnd@hh@@B')
 
 def set_rfl_types(rfl_type_info_arr_ea):
     for type_info_ea in null_terminated_ptr_array_iterator(rfl_type_info_arr_ea):
         handle_anal_exceptions(lambda: set_rfl_type(type_info_ea))
 
-def set_rfl_classes(rfl_class_arr_ea):
+def set_rfl_classes(static_initializer_eas, rfl_class_arr_ea):
     for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
-        handle_anal_exceptions(lambda: handle_rfl_class(rfl_class_ea))
+        handle_anal_exceptions(lambda: handle_rfl_class(static_initializer_eas, rfl_class_ea))
 
-def find_rfl_statics():
+def find_rfl_statics(static_initializer_eas):
     rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 
     rfl_type_info_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x50)
@@ -139,4 +143,4 @@ def find_rfl_statics():
     rfl_class_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x6d)
 
     set_rfl_types(rfl_type_info_arr_ea)
-    set_rfl_classes(rfl_class_arr_ea)
+    set_rfl_classes(static_initializer_eas, rfl_class_arr_ea)

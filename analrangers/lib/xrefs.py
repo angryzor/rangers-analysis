@@ -11,5 +11,8 @@ def in_segments(segs, crefs):
 def get_code_drefs_to(ea):
     return in_segments(['.rdata', '.tls$'], get_drefs_to(ea))
 
+def get_data_drefs_to(ea):
+    return in_segments(['.xdata', '.rodata'], get_drefs_to(ea))
+
 def get_safe_crefs_to(ea):
     return in_segments(['.rdata', '.tls$'], get_crefs_to(ea))

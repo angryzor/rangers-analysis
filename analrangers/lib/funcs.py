@@ -1,6 +1,6 @@
 import itertools
 from ida_ua import print_insn_mnem
-from ida_name import set_name, get_name
+from ida_name import get_name
 from ida_bytes import get_bytes, get_item_head, del_items
 from ida_funcs import get_func, add_func, calc_thunk_func_target, FUNC_THUNK, get_func, func_parent_iterator_t
 from ida_idaapi import BADADDR
@@ -32,13 +32,6 @@ def ensure_functions(ea):
         ensure_function(thunk_ea)
     
     return get_func(ea)
-
-def set_func_name(f, name):
-    for i, f in reversed([*enumerate(reversed([*get_thunk_targets(f)]))]):
-        if is_stock_function(f):
-            break
-
-        set_name(f.start_ea, f"{'j_' * i}{name}")
 
 class FunctionNotFoundException(NotFoundException):
     def __init__(self, ea):
