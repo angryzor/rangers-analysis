@@ -14,7 +14,7 @@ def handle_obj_class(obj_class_ea):
     name_ea = get_qword(obj_class_ea)
     instantiator_thunk_ea = get_qword(obj_class_ea + 0x20)
 
-    print(f'info: handling service at {obj_class_ea:x}: {get_cstr(name_ea)}')
+    print(f'info: handling ObjectClass at {obj_class_ea:x}: {get_cstr(name_ea)}')
 
     force_apply_tinfo(obj_class_ea, obj_class_tif)
 

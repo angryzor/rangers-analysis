@@ -10,15 +10,15 @@ def get_cstr(ea):
 
     return b and b.decode('utf-8')
 
-def force_apply_tinfo(ea, tif):
+def force_apply_tinfo(ea, tif, flags = TINFO_DEFINITE):
     del_items(ea, 0, tif.get_size())
-    apply_tinfo(ea, tif, TINFO_DEFINITE)
+    apply_tinfo(ea, tif, flags)
 
-def force_apply_tinfo_array(ea, tif, count):
+def force_apply_tinfo_array(ea, tif, count, flags = TINFO_DEFINITE):
     arr_tif = tinfo_t()
     arr_tif.create_array(tif, count)
     
-    force_apply_tinfo(ea, arr_tif)
+    force_apply_tinfo(ea, arr_tif, flags)
 
 def class_name_to_backrefs(class_name):
     return "".join([str(i) for i in range(1, 1 + len(class_name.split("@")))])
@@ -36,12 +36,14 @@ def binsearch_matches(start_ea, end_ea, bts, mask = None, align = None):
         cur_ea = next_not_tail(match_ea)
 
 def heads(start_ea, end_ea):
-    if is_head(get_flags(start_ea)):
-        yield start_ea
-    
     while start_ea != BADADDR:
-        start_ea = next_head(start_ea, end_ea)
         yield start_ea
+        start_ea = next_head(start_ea, end_ea)
+
+def not_tails(start_ea, end_ea):
+    while start_ea != BADADDR and start_ea != end_ea:
+        yield start_ea
+        start_ea = next_not_tail(start_ea)
 
 class CStrNotFoundException(NotFoundException):
     def __init__(self, ctor_func):
@@ -61,6 +63,9 @@ def require_type(type_name):
 
 class NameNotFoundException(NotFoundException):
     def __init__(self, name):
-        super().__init__(f'{name} is not identified yet (demangled: {demangle_name(name)}). import patterns first.')
+        super().__init__(f'{name} is not identified yet (demangled: {demangle_name(name, 0)}). import patterns first.')
 
-require_name_ea = require_wrap(NameNotFoundException, lambda name: get_name_ea(BADADDR, name))
+def badaddr_to_none(ea):
+    return None if ea == BADADDR else ea
+
+require_name_ea = require_wrap(NameNotFoundException, lambda name: badaddr_to_none(get_name_ea(BADADDR, name)))

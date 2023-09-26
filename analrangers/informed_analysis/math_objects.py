@@ -1,14 +1,15 @@
-from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags
+from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags, is_dword, get_dword, calc_max_align
 from ida_segment import get_segm_by_name
-from ida_typeinf import apply_tinfo, TINFO_GUESSED, idc_guess_type
-from analrangers.lib.util import require_type, binsearch_matches
+from ida_typeinf import TINFO_GUESSED, idc_guess_type, tinfo_t, BTF_FLOAT
+from analrangers.lib.util import require_type, binsearch_matches, force_apply_tinfo_array, force_apply_tinfo, not_tails
 from .report import handle_anal_exceptions
 from ctypes import cast, pointer, c_long, c_float, POINTER
 
 quat_tif = require_type('csl::math::Quaternion')
 v4_tif = require_type('csl::math::Vector4')
 mat44_tif = require_type('csl::math::Matrix44')
-
+float_tif = tinfo_t()
+float_tif.create_simple_type(BTF_FLOAT)
 
 numbers = {
     '0': b'\x00\x00\x00\x00',
@@ -26,6 +27,7 @@ masks = {
     'none': b'\x00\x00\x00\x00',
     'exp': b'\x00\x00\x80\x7F',
     'abs': b'\xFF\xFF\xFF\x7F',
+    'sign': b'\x00\x00\x00\x80',
     'unknown': b'\x00\x00\x00\x4B',
     'all': b'\xFF\xFF\xFF\xFF',
 }
@@ -41,6 +43,9 @@ commonvectors = {
     'mirror over x axis': numbers['1'] + numbers['-1'] + numbers['-1'] + numbers['1'],
     'mirror over y axis': numbers['-1'] + numbers['1'] + numbers['-1'] + numbers['1'],
     'mirror over z axis': numbers['-1'] + numbers['-1'] + numbers['1'] + numbers['1'],
+    'mirror over yz plane': numbers['-1'] + numbers['1'] + numbers['1'] + numbers['1'],
+    'mirror over xz plane': numbers['1'] + numbers['-1'] + numbers['1'] + numbers['1'],
+    'mirror over xy plane': numbers['1'] + numbers['1'] + numbers['-1'] + numbers['1'],
     'mirror over origin': numbers['-1'] + numbers['-1'] + numbers['-1'] + numbers['1'],
 
     'unit xyz': numbers['1'] + numbers['1'] + numbers['1'] + numbers['0'],
@@ -49,11 +54,16 @@ commonvectors = {
     'negative unit xyzw': numbers['-1'] + numbers['-1'] + numbers['-1'] + numbers['-1'],
     
     'mask all xyzw': masks['all'] + masks['all'] + masks['all'] + masks['all'],
-    'mask abs xyzw': masks['abs'] + masks['abs'] + masks['abs'] + masks['abs'],
-    'mask exp xyzw': masks['exp'] + masks['exp'] + masks['exp'] + masks['exp'],
-    'mask unknown xyzw': masks['unknown'] + masks['unknown'] + masks['unknown'] + masks['unknown'],
     'mask all xyz': masks['all'] + masks['all'] + masks['all'] + masks['none'],
+    'mask all x': masks['all'] + masks['none'] + masks['none'] + masks['none'],
+    'mask all y': masks['none'] + masks['all'] + masks['none'] + masks['none'],
+    'mask all z': masks['none'] + masks['none'] + masks['all'] + masks['none'],
+    'mask unknown xyzw': masks['unknown'] + masks['unknown'] + masks['unknown'] + masks['unknown'],
+    'mask sign xyzw': masks['sign'] + masks['sign'] + masks['sign'] + masks['sign'],
+    'mask sign xyz': masks['sign'] + masks['sign'] + masks['sign'] + masks['none'],
+    'mask abs xyzw': masks['abs'] + masks['abs'] + masks['abs'] + masks['abs'],
     'mask abs xyz': masks['abs'] + masks['abs'] + masks['abs'] + masks['none'],
+    'mask exp xyzw': masks['exp'] + masks['exp'] + masks['exp'] + masks['exp'],
     'mask exp xyz': masks['exp'] + masks['exp'] + masks['exp'] + masks['none'],
     
     'quaternion multtable i': numbers['1'] + numbers['-1'] + numbers['1'] + numbers['-1'],
@@ -76,7 +86,16 @@ commonmats = {
     'identity': commonvectors['basis x'] + commonvectors['basis y'] + commonvectors['basis z'] + commonquats['unit quaternion']
 }
 
-def match_bytes(seg, d, tif, align):
+commonfloatarrays = {
+    'sine minimax approximation coeffs degree 11': b'\xab\xaa*\xbe\x86\x88\x08<\xf1\x0bP\xb9\x8e\xb886[6\xcd\xb2',
+    'sine minimax approximation coeffs degree 7': b'\x88\xa8*\xbe<7\x08<\xc8>B\xb9',
+    'cosine minimax approximation coeffs degree 10': b'\x00\x00\x00\xbf\xa3\xaa*=\xaa\t\xb6\xba\xc2\xb4\xcf7\x11\xdd\x8b\xb4',
+    'cosine minimax approximation coeffs degree 6': b'~\xf6\xff\xbe\x87\xf5)=\xdb\x9f\xa6\xba',
+}
+
+def match_bytes(seg, d, tif, align, make_array = False):
+    tif_size = tif.get_size()
+    
     for k in d:
         print(f'info: finding matches for `{k}`')
         for ea in binsearch_matches(seg.start_ea, seg.end_ea, d[k], None, align):
@@ -84,26 +103,43 @@ def match_bytes(seg, d, tif, align):
             typ = idc_guess_type(ea)
             typ = typ and typ.split('[')[0]
 
-            if is_unknown(flags) or is_oword(flags) or typ in ('V4', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion'):
+            if is_unknown(flags) or is_oword(flags) or typ in ('V4', 'float', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion'):
                 print(f'info: found `{k}` instance at {ea:x}')
 
-                apply_tinfo(ea, tif, TINFO_GUESSED)
+                if make_array:
+                    force_apply_tinfo_array(ea, tif, len(d[k]) // tif_size, TINFO_GUESSED)
+                else:
+                    force_apply_tinfo(ea, tif, TINFO_GUESSED)
+
                 set_cmt(ea, k, True)
 
-def looks_like_float(v):
-    # 80000000 is constantly used for capacities in arrays so we also exclude it
-    if (v & 0x7fffffff) == 0: return False
+def looks_like_float(v, allow_zero = False):
+    # 80000000 (-0.0) is constantly used for capacities in arrays so we also exclude it
+    if (v & 0x7fffffff) == 0: return allow_zero
 
     exp = ((v & 0x7f800000) >> 23) - 127
-    mant = v & 0x007fffff
+    # mant = v & 0x007fffff
 
     if not -30 < exp < 30: return False
-    if not (mant & 0x0000ffff) == 0: return False
+    # if (mant & 0x0000ffff) == 0: return True
 
     return True
 
 # def find_float_vectors():
+def all_bytes(f, ea, size):
+    return all(map(lambda off: f(ea + off), range(0, size)))
 
+def all_of_v4(f, ea):
+    return all(map(lambda off: f(ea + off), range(0, 16, 4)))
+
+def isunk(ea):
+    return is_unknown(get_flags(ea))
+
+def may_convert_to_float(ea):
+    return calc_max_align(ea) >= 4 and all_bytes(isunk, ea, 4) or is_dword(get_flags(ea))
+
+def may_convert_to_v4(ea):
+    return calc_max_align(ea) >= 2 and all_bytes(isunk, ea, 16) or is_oword(get_flags(ea))
 
 def find_common_math_objects():
     seg_name = '.xdata'
@@ -118,12 +154,21 @@ def find_common_math_objects():
     print(f'info: searching for matrices in segment {seg_name}')
     match_bytes(seg, commonmats, mat44_tif, 4)
 
+    print(f'info: searching for float arrays in segment {seg_name}')
+    match_bytes(seg, commonfloatarrays, float_tif, 2, True)
+
     for ea in binsearch_matches(seg.start_ea, seg.end_ea, originvec, None, 4):
         flags = get_flags(ea)
         prev_ea = ea - 16
         next_ea = ea + 16
 
-        if (is_unknown(flags) or is_oword(flags)) and prev_ea >= seg.start_ea and next_ea <= seg.end_ea - 16 and idc_guess_type(prev_ea) in ('V4', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion') and idc_guess_type(next_ea) in ('V4', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion'):
+        if (is_unknown(flags) or is_oword(flags)) and prev_ea >= seg.start_ea and next_ea <= seg.end_ea - 16 and idc_guess_type(prev_ea) in ('V4', 'float', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion') and idc_guess_type(next_ea) in ('V4', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion'):
             # We're in a math block, so we'll accept this as an origin vector
-            apply_tinfo(ea, v4_tif, TINFO_GUESSED)
+            force_apply_tinfo(ea, v4_tif, TINFO_GUESSED)
             set_cmt(ea, 'origin xyzw', True)
+
+    for ea in not_tails(seg.start_ea, seg.end_ea):
+        if ea <= seg.end_ea - 16 and may_convert_to_v4(ea) and all_of_v4(lambda ea: looks_like_float(get_dword(ea), True), ea) and not all_of_v4(lambda ea: get_dword(ea) == 0, ea):
+            force_apply_tinfo(ea, v4_tif, TINFO_GUESSED)
+        elif ea <= seg.end_ea - 4 and may_convert_to_float(ea) and looks_like_float(get_dword(ea)):
+            force_apply_tinfo(ea, float_tif, TINFO_GUESSED)
