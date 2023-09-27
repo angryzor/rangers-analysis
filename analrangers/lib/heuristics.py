@@ -53,7 +53,10 @@ require_vtable = require_wrap(VTableNotFoundException, guess_vtable_from_constru
 def follow_jmp_chains_to_next_func(insn_ea):
     f = require_function(insn_ea)
     insn = read_insn(insn_ea)
-    while f.start_ea != insn_ea and insn.mnem == 'jmp':
+    while f.start_ea != insn_ea:
+        if insn.mnem != 'jmp':
+            return None
+
         insn_ea = insn.insn.Op1.addr
         f = require_function(insn_ea)
         insn = read_insn(insn_ea)
