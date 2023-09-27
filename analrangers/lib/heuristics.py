@@ -1,7 +1,7 @@
 import re
 from ida_name import get_name
 from ida_segment import get_segm_name, getseg
-from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem
+from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem, o_near
 from ida_bytes import get_qword, get_flags, is_code
 from ida_idaapi import BADADDR
 from ida_funcs import get_func
@@ -66,7 +66,7 @@ def guess_constructor_thunk_from_instantiator(f):
     if looks_like_constructor(f):
         return f
     
-    jmp_insn = find_insn_forward(lambda d: d.mnem == 'jmp', f.start_ea, f.end_ea)
+    jmp_insn = find_insn_forward(lambda d: d.mnem == 'jmp' and d.insn.Op1.type == o_near, f.start_ea, f.end_ea)
     if not jmp_insn:
         raise AnalException(f"Can't find constructor from instantiator {f.start_ea:x}")
     
@@ -158,6 +158,12 @@ def estimate_class_name_from_constructor(f):
     vtable_ea = guess_vtable_from_constructor(f)
     if vtable_ea != None and is_rtti_identified_vtable(vtable_ea):
         return estimate_class_name_from_vtable(vtable_ea)
+
+class ClassNameNotFoundException(NotFoundException):
+    def __init__(self, ctor_func):
+        super().__init__(f'Could not find vtable-based class name for constructor {ctor_func.start_ea:x}')
+
+require_class_name_from_constructor = require_wrap(ClassNameNotFoundException, estimate_class_name_from_constructor)
 
 def is_rtti_identified_vtable(ea):
     existing_name = get_name(ea)
