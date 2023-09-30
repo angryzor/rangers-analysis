@@ -154,6 +154,16 @@ def parse_usr(usr):
             return parse_ident()
         if parse_re(r'\*'):
             return f'{parse_type()}*'
+        if parse_re(r'F'):
+            return_type = expect(parse_type())
+            args = []
+
+            expect(parse_re('\('))
+            while not parse_re('\)'):
+                expect(parse_re('#'))
+                args.append(expect(parse_type()))
+
+            return f'{return_type} ({", ".join(args)})'
         # Process primitives
         if parse_re(r'v'): return 'void'
         if parse_re(r'b'): return 'bool'
@@ -317,6 +327,10 @@ def attempt_applying_type_to_name(mangled_name, type):
     address = get_name_ea_simple(mangled_name)
     if address != idaapi.BADADDR:
         idaapi.apply_tinfo(address, type, idaapi.TINFO_DELAYFUNC | idaapi.TINFO_DEFINITE)
+
+        thunk_name = 'j_' + mangled_name
+        if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
+            attempt_applying_type_to_name(thunk_name, type)
     else:
         print(f'Unmatched name: {mangled_name}, cannot apply type.')
 
@@ -416,7 +430,6 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
     tif = idaapi.tinfo_t()
     data = idaapi.func_type_data_t()
     data.flags = flags
-    data.rettype = get_ida_type(type.get_result())
     data.stkargs = 0
     data.spoiled.clear()
     data.clear()
@@ -434,6 +447,9 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
         funcarg.type = thistype
         funcarg.flags = FAI_HIDDEN
         data.push_back(funcarg)
+
+    data.rettype = thistype if decl.kind == CursorKind.CONSTRUCTOR else get_ida_type(type.get_result())
+
     if decl.kind != CursorKind.NO_DECL_FOUND:
         for argument in decl.get_arguments():
             funcarg = idaapi.funcarg_t()

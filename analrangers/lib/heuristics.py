@@ -2,7 +2,7 @@ import re
 from ida_name import get_name
 from ida_segment import get_segm_name, getseg
 from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem, o_near
-from ida_bytes import get_qword, get_flags, is_code
+from ida_bytes import get_qword, get_flags, is_code, has_user_name
 from ida_idaapi import BADADDR
 from ida_funcs import get_func
 from .util import get_cstr
@@ -69,13 +69,11 @@ def guess_constructor_thunk_from_instantiator(f):
     if looks_like_constructor(f):
         return f
     
-    jmp_insn = find_insn_forward(lambda d: d.mnem == 'jmp' and d.insn.Op1.type == o_near, f.start_ea, f.end_ea)
-    if not jmp_insn:
-        raise AnalException(f"Can't find constructor from instantiator {f.start_ea:x}")
+    if jmp_insn := find_insn_forward(lambda d: d.mnem == 'jmp' and d.insn.Op1.type == o_near, f.start_ea, f.end_ea):
+        if ctor := follow_jmp_chains_to_next_func(jmp_insn.ea):
+            return ctor
     
-    ctor = follow_jmp_chains_to_next_func(jmp_insn.ea)
-
-    return ctor
+    raise AnalException(f"Can't find constructor from instantiator {f.start_ea:x}")
 
 def looks_like_instantiator(f):
     # Check if we try to read out the vtable of rcx, presumably the allocator.
@@ -159,7 +157,7 @@ def estimate_class_name_from_vtable(ea):
 
 def estimate_class_name_from_constructor(f):
     vtable_ea = guess_vtable_from_constructor(f)
-    if vtable_ea != None and is_rtti_identified_vtable(vtable_ea):
+    if vtable_ea != None and (is_rtti_identified_vtable(vtable_ea) or has_user_name(get_flags(vtable_ea))):
         return estimate_class_name_from_vtable(vtable_ea)
 
 class ClassNameNotFoundException(NotFoundException):
