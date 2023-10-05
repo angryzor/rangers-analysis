@@ -12,6 +12,7 @@ from .analysis_exceptions import AnalException
 from .require import require_wrap, NotFoundException
 from .funcs import require_function, require_thunk, FunctionNotFoundException
 from .iterators import require_unique, find, UniqueNotFoundException
+from .segments import rdata_seg
 
 def guess_vtable_from_constructor(f):
     last_ea = f.start_ea
@@ -19,7 +20,7 @@ def guess_vtable_from_constructor(f):
     found_vtable_load = None
 
     while vtable_load := find(
-        lambda i: i[0].mnem == 'lea' and i[0].insn.Op2.type == o_mem and not is_code(get_flags(i[0].insn.Op2.addr)) and get_segm_name(getseg(i[0].insn.Op2.addr)) == '.xdata',
+        lambda i: i[0].mnem == 'lea' and i[0].insn.Op2.type == o_mem and not is_code(get_flags(i[0].insn.Op2.addr)) and get_segm_name(getseg(i[0].insn.Op2.addr)) == rdata_seg,
         track_values(values, decoded_insns_forward(last_ea, f.end_ea))
     ):
         last_ea = vtable_load[0].ea + vtable_load[0].size
@@ -72,8 +73,12 @@ def guess_constructor_thunk_from_instantiator(f):
     if jmp_insn := find_insn_forward(lambda d: d.mnem == 'jmp' and d.insn.Op1.type == o_near, f.start_ea, f.end_ea):
         if ctor := follow_jmp_chains_to_next_func(jmp_insn.ea):
             return ctor
-    
-    raise AnalException(f"Can't find constructor from instantiator {f.start_ea:x}")
+
+class ConstructorNotFoundException(NotFoundException):
+    def __init__(self, f):
+        super().__init__(f"Can't find constructor from instantiator {f.start_ea:x}")
+
+require_constructor_thunk_from_instantiator = require_wrap(VTableNotFoundException, guess_constructor_thunk_from_instantiator)
 
 def looks_like_instantiator(f):
     # Check if we try to read out the vtable of rcx, presumably the allocator.
@@ -180,7 +185,7 @@ def generated_class_name(name, category, prefix = 'heur'):
     return f'{name}@{category}@{prefix}'
 
 def get_best_class_name(ctor_func, short_name_ea, category):
-    class_name = estimate_class_name_from_constructor(ctor_func)
+    class_name = ctor_func and estimate_class_name_from_constructor(ctor_func)
     if class_name != None:
         return class_name, False
     
@@ -213,4 +218,4 @@ def discover_class_hierarchy(base_ctor):
         
         yield instantiator_thunk, instantiator_func, ctor_thunk, ctor_func, base_ctor
 
-        discover_class_hierarchy(ctor_func)
+        yield from discover_class_hierarchy(ctor_func)

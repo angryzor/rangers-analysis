@@ -1,6 +1,7 @@
 from ida_bytes import get_qword, get_dword
+from ida_typeinf import tinfo_t
 from analrangers.lib.funcs import ensure_functions, find_implementation
-from analrangers.lib.heuristics import get_best_class_name, guess_constructor_thunk_from_instantiator
+from analrangers.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator
 from analrangers.lib.util import get_cstr, class_name_to_backrefs, require_type, force_apply_tinfo, force_apply_tinfo_array, require_name_ea
 from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
 from analrangers.lib.ua_data_extraction import read_source_op_addr
@@ -20,7 +21,7 @@ def handle_obj_class(obj_class_ea):
 
     instantiator_thunk = ensure_functions(instantiator_thunk_ea)
     instantiator = find_implementation(instantiator_thunk)
-    constructor_thunk = guess_constructor_thunk_from_instantiator(instantiator)
+    constructor_thunk = require_constructor_thunk_from_instantiator(instantiator)
     constructor = find_implementation(constructor_thunk)
 
     class_name, using_fallback_name = get_best_class_name(constructor, name_ea, 'gameobjects')
@@ -45,6 +46,11 @@ def find_obj_classes():
     load_go_classes_ea = require_name_ea('?LoadGameObjectClasses@GameObjectSystem@game@hh@@SAXXZ')
 
     obj_class_arr_ea = read_source_op_addr(load_go_classes_ea + 0x12)
+
+    tif = tinfo_t()
+    tif.create_ptr(obj_class_tif)
+
+    force_apply_tinfo_array(obj_class_arr_ea, tif, len(list(null_terminated_ptr_array_iterator(obj_class_arr_ea))) + 1)
 
     for obj_class_ea in null_terminated_ptr_array_iterator(obj_class_arr_ea):
         handle_anal_exceptions(lambda: handle_obj_class(obj_class_ea))

@@ -3,12 +3,13 @@ from ida_segment import get_segm_by_name
 from ida_funcs import get_fchunk
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
 from analrangers.lib.funcs import ensure_functions, func_parents, find_implementation, require_function, require_thunk
-from analrangers.lib.heuristics import get_best_class_name, get_getter_xref, guess_constructor_thunk_from_instantiator
+from analrangers.lib.heuristics import get_best_class_name, get_getter_xref, require_constructor_thunk_from_instantiator
 from analrangers.lib.util import get_cstr, class_name_to_backrefs
 from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
+from analrangers.lib.segments import text_seg
 from .report import handle_anal_exceptions
 
-tls_seg = get_segm_by_name('.tls$')
+tls_seg = get_segm_by_name(text_seg)
 
 def handle_func_parent(parent_ea):
     parent = require_function(parent_ea)
@@ -22,7 +23,7 @@ def handle_func_parent(parent_ea):
 
     initializer_thunk = ensure_functions(initializer_ea)
     initializer = find_implementation(initializer_thunk)
-    constructor_thunk = guess_constructor_thunk_from_instantiator(initializer)
+    constructor_thunk = require_constructor_thunk_from_instantiator(initializer)
     constructor = find_implementation(constructor_thunk)
 
     class_name, using_fallback_name = get_best_class_name(constructor, service_name_ea, 'services')

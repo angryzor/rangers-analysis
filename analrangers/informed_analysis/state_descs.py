@@ -1,10 +1,11 @@
 from analrangers.lib.util import require_type, require_name_ea
 from analrangers.lib.xrefs import get_safe_crefs_to
-from analrangers.lib.heuristics import get_best_class_name, guess_constructor_thunk_from_instantiator
+from analrangers.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator
 from analrangers.lib.funcs import require_thunk, require_function, ensure_functions, find_implementation
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
 from analrangers.lib.naming import set_generated_func_name, set_generated_name
-from .report import handle_anal_exceptions
+from analrangers.lib.require import NotFoundException
+from .report import handle_anal_exceptions, report_failure
 
 rfl_type_info_tif = require_type('hh::ut::StateDesc')
 
@@ -22,15 +23,20 @@ def handle_state_desc(xref, static_initializers):
     name_ea = read_source_op_addr_from_reg_assignment(initializer_ea, 2)
     atexit_dtor = ensure_functions(read_source_op_addr_from_reg_assignment(xref, 1))
     instantiator_thunk = ensure_functions(read_source_op_addr_from_reg_assignment(initializer_ea, 8))
-
     instantiator = find_implementation(instantiator_thunk)
-    ctor_thunk = guess_constructor_thunk_from_instantiator(instantiator)
-    ctor = find_implementation(ctor_thunk)
+
+    try:
+        ctor_thunk = require_constructor_thunk_from_instantiator(instantiator)
+        ctor = find_implementation(ctor_thunk)
+    except NotFoundException as err:
+        ctor_thunk = None
+        ctor = None
+        report_failure(err)
 
     class_name, is_fallback_name = get_best_class_name(ctor, name_ea, 'states')
     backrefs = "".join([str(i) for i in range(1, 1 + len(class_name.split("@")))])
 
-    print(f'info: handling StateDesc at {state_desc_ea:x}: {class_name} (instantiator: {instantiator.start_ea:x}, ctor_thunk: {ctor_thunk.start_ea:x}, constructor: {ctor.start_ea:x})')
+    print(f'info: handling StateDesc at {state_desc_ea:x}: {class_name} (instantiator: {instantiator.start_ea:x}, ctor_thunk: {ctor_thunk.start_ea if ctor_thunk else 0:x}, constructor: {ctor.start_ea if ctor else 0:x})')
 
     # Set desc info
     # force_apply_tinfo(state_desc_ea, state_desc_tif)
@@ -41,7 +47,8 @@ def handle_state_desc(xref, static_initializers):
     # force_apply_tinfo()
 
     # Set constructor info
-    set_generated_func_name(ctor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+    if ctor_thunk:
+        set_generated_func_name(ctor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
 
     # Set initializer info
     set_generated_func_name(initializer_thunk, f'??__EstaticInstance@{class_name}@@0VStateDesc@ut@hh@@B')

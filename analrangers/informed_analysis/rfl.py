@@ -1,4 +1,5 @@
 from ida_bytes import get_qword
+from ida_typeinf import tinfo_t
 from analrangers.lib.util import require_type, require_name_ea, require_cstr, force_apply_tinfo, force_apply_tinfo_array, class_name_to_backrefs
 from analrangers.lib.iterators import require_unique, null_terminated_ptr_array_iterator
 from analrangers.lib.heuristics import generated_class_name, get_getter_xref
@@ -7,6 +8,7 @@ from analrangers.lib.xrefs import get_code_drefs_to, get_data_drefs_to
 from analrangers.lib.require import NotFoundException
 from analrangers.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
 from analrangers.lib.naming import set_generated_func_name, set_generated_name
+from analrangers.lib.analysis_exceptions import AnalException
 from .report import handle_anal_exceptions
 
 rfl_type_info_tif = require_type('hh::fnd::RflTypeInfo')
@@ -109,11 +111,11 @@ def handle_rfl_class(static_initializer_eas, rfl_class_ea):
     if getter_ea != None:
         set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVRflClass@fnd@hh@@XZ')
     
-    enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20)
-    enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28)
+    enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20, initializer_func.end_ea)
+    enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28, initializer_func.end_ea)
     
-    members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30)
-    members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38)
+    members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30, initializer_func.end_ea)
+    members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38, initializer_func.end_ea)
 
     handle_rfl_enums(enums_ea, enums_count)
     handle_rfl_members(members_ea, members_count)
@@ -127,20 +129,30 @@ def handle_rfl_class(static_initializer_eas, rfl_class_ea):
         set_generated_func_name(members_initializer, f'??__EstaticClassMembers@{class_name}@@0QBVRflClassMember@fnd@hh@@B')
 
 def set_rfl_types(rfl_type_info_arr_ea):
+    tif = tinfo_t()
+    tif.create_ptr(rfl_type_info_tif)
+
+    force_apply_tinfo_array(rfl_type_info_arr_ea, tif, len(list(null_terminated_ptr_array_iterator(rfl_type_info_arr_ea))) + 1)
+
     for type_info_ea in null_terminated_ptr_array_iterator(rfl_type_info_arr_ea):
         handle_anal_exceptions(lambda: set_rfl_type(type_info_ea))
 
 def set_rfl_classes(static_initializer_eas, rfl_class_arr_ea):
+    tif = tinfo_t()
+    tif.create_ptr(rfl_class_tif)
+
+    force_apply_tinfo_array(rfl_class_arr_ea, tif, len(list(null_terminated_ptr_array_iterator(rfl_class_arr_ea))) + 1)
+
     for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
         handle_anal_exceptions(lambda: handle_rfl_class(static_initializer_eas, rfl_class_ea))
 
 def find_rfl_statics(static_initializer_eas):
     rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 
-    rfl_type_info_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x50)
-    rfl_type_info_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x61)
-    rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x74)
-    rfl_class_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x6d)
+    rfl_type_info_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x56)
+    # rfl_type_info_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x61)
+    rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x7a)
+    # rfl_class_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x6d)
 
     set_rfl_types(rfl_type_info_arr_ea)
     set_rfl_classes(static_initializer_eas, rfl_class_arr_ea)

@@ -203,7 +203,7 @@ def emit_struct(structs, rfl_class_ea):
 
 clear_report()
 
-rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x74)
+rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x7a)
 
 structs = OrderedDict()
 

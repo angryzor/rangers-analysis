@@ -1,7 +1,8 @@
-from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags, is_dword, get_dword, calc_max_align
+from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags, is_dword, get_dword, calc_max_align, get_item_size, is_qword
 from ida_segment import get_segm_by_name
 from ida_typeinf import TINFO_GUESSED, idc_guess_type, tinfo_t, BTF_FLOAT
 from analrangers.lib.util import require_type, binsearch_matches, force_apply_tinfo_array, force_apply_tinfo, not_tails
+from analrangers.lib.segments import rdata_seg
 from .report import handle_anal_exceptions
 from ctypes import cast, pointer, c_long, c_float, POINTER
 
@@ -16,11 +17,17 @@ numbers = {
     '1': b'\x00\x00\x80\x3F',
     '-1': b'\x00\x00\x80\xBF',
     'pi': b'\xDB\x0F\x49\x40',
+    '-pi': b'\xDB\x0F\x49\xC0',
     'tau': b'\xDB\x0F\xC9\x40',
+    '-tau': b'\xDB\x0F\xC9\xC0',
     'pi / 2': b'\xDB\x0F\xC9\x3F',
     '1 / tau': b'\x83\xF9\x22\x3E',
+    '1 / 4': b'\x00\x00\x80\x3E',
     'nan': b'\x00\x00\xC0\x7F',
     'floatprecision': b'\x00\x00\x00\x34',
+    '60 degrees in radians': b'\x92\x0A\x86\x3F',
+    '75 degrees in radians': b'\x36\x8D\xA7\x3F',
+    '150 degrees in radians': b'\x36\x8D\x27\x40',
 }
 
 masks = {
@@ -74,6 +81,7 @@ commonvectors = {
     'tau xyzw': numbers['tau'] + numbers['tau'] + numbers['tau'] + numbers['tau'],
     'pi / 2 xyzw': numbers['pi / 2'] + numbers['pi / 2'] + numbers['pi / 2'] + numbers['pi / 2'],
     '1 / tau xyzw': numbers['1 / tau'] + numbers['1 / tau'] + numbers['1 / tau'] + numbers['1 / tau'],
+    '1 / 4 xyzw': numbers['1 / 4'] + numbers['1 / 4'] + numbers['1 / 4'] + numbers['1 / 4'],
     'nan xyzw': numbers['nan'] + numbers['nan'] + numbers['nan'] + numbers['nan'],
     'floatprecision xyzw': numbers['floatprecision'] + numbers['floatprecision'] + numbers['floatprecision'] + numbers['floatprecision'],
 }
@@ -103,7 +111,7 @@ def match_bytes(seg, d, tif, align, make_array = False):
             typ = idc_guess_type(ea)
             typ = typ and typ.split('[')[0]
 
-            if is_unknown(flags) or is_oword(flags) or typ in ('V4', 'float', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion'):
+            if is_unknown(flags) or is_oword(flags) or (tif.get_size() == 16 and is_qword(flags) and (is_unknown(get_flags(ea + 8)) or is_qword(get_flags(ea + 8)))) or (get_item_size(ea) == tif.get_size() and typ in ('V4', 'float', 'csl::math::Vector4', 'csl::math::Matrix44', 'csl::math::Quaternion')):
                 print(f'info: found `{k}` instance at {ea:x}')
 
                 if make_array:
@@ -142,21 +150,21 @@ def may_convert_to_v4(ea):
     return calc_max_align(ea) >= 2 and all_bytes(isunk, ea, 16) or is_oword(get_flags(ea))
 
 def find_common_math_objects():
-    seg_name = '.xdata'
-    seg = get_segm_by_name(seg_name)
+    seg = get_segm_by_name(rdata_seg)
 
-    print(f'info: searching for vectors in segment {seg_name}')
+    print(f'info: searching for vectors in segment {rdata_seg}')
     match_bytes(seg, commonvectors, v4_tif, 4)
 
-    print(f'info: searching for quaternions in segment {seg_name}')
+    print(f'info: searching for quaternions in segment {rdata_seg}')
     match_bytes(seg, commonquats, quat_tif, 4)
 
-    print(f'info: searching for matrices in segment {seg_name}')
+    print(f'info: searching for matrices in segment {rdata_seg}')
     match_bytes(seg, commonmats, mat44_tif, 4)
 
-    print(f'info: searching for float arrays in segment {seg_name}')
+    print(f'info: searching for float arrays in segment {rdata_seg}')
     match_bytes(seg, commonfloatarrays, float_tif, 2, True)
 
+    print(f'info: searching for origin vectors in segment {rdata_seg}')
     for ea in binsearch_matches(seg.start_ea, seg.end_ea, originvec, None, 4):
         flags = get_flags(ea)
         prev_ea = ea - 16
@@ -167,8 +175,12 @@ def find_common_math_objects():
             force_apply_tinfo(ea, v4_tif, TINFO_GUESSED)
             set_cmt(ea, 'origin xyzw', True)
 
+    print(f'info: searching for probable standalone floats in segment {rdata_seg}')
     for ea in not_tails(seg.start_ea, seg.end_ea):
         if ea <= seg.end_ea - 16 and may_convert_to_v4(ea) and all_of_v4(lambda ea: looks_like_float(get_dword(ea), True), ea) and not all_of_v4(lambda ea: get_dword(ea) == 0, ea):
             force_apply_tinfo(ea, v4_tif, TINFO_GUESSED)
         elif ea <= seg.end_ea - 4 and may_convert_to_float(ea) and looks_like_float(get_dword(ea)):
             force_apply_tinfo(ea, float_tif, TINFO_GUESSED)
+
+    print(f'info: searching for special floats in segment {rdata_seg}')
+    match_bytes(seg, { k: numbers[k] for k in numbers if not numbers[k].startswith(b'\x00\x00') }, float_tif, 2)

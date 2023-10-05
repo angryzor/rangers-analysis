@@ -4,6 +4,7 @@ from ida_name import get_name
 from ida_bytes import get_bytes, get_item_head, del_items
 from ida_funcs import get_func, add_func, calc_thunk_func_target, FUNC_THUNK, get_func, func_parent_iterator_t
 from ida_idaapi import BADADDR
+from ida_frame import get_frame_size
 from .iterators import find_unique
 from .analysis_exceptions import AnalException
 from .require import NotFoundException, require_wrap
@@ -12,6 +13,14 @@ from .xrefs import get_safe_crefs_to
 def is_stock_function(f):
     ea = f.start_ea
     return get_name(ea).startswith('nullsub_') or get_name(ea) == 'pure_virtual_function' or print_insn_mnem(ea) == 'retn' or get_bytes(ea, 3) == b'\xB0\x01\xC3' or get_bytes(ea, 3) == b'\x32\xC0\xC3'
+
+def get_function(ea):
+    f = get_func(ea)
+    
+    if get_frame_size(f) > 0x10000:
+        raise AnalException(f'fuck denuvo at {ea:x}')
+
+    return f
 
 def ensure_function(ea):
     f = get_func(ea)
@@ -24,7 +33,7 @@ def ensure_function(ea):
         if not add_func(ea):
             raise AnalException(f'could not create func at {ea:x}')
         
-        f = get_func(ea)
+        f = get_function(ea)
     return f
 
 def ensure_functions(ea):
@@ -37,7 +46,7 @@ class FunctionNotFoundException(NotFoundException):
     def __init__(self, ea):
         super().__init__(f'Cannot find function at {ea:x}.')
 
-require_function = require_wrap(FunctionNotFoundException, get_func)
+require_function = require_wrap(FunctionNotFoundException, get_function)
 
 class ThunkIterationException(AnalException):
     pass

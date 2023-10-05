@@ -6,6 +6,7 @@ from analrangers.lib.heuristics import get_best_class_name, discover_class_hiera
 from analrangers.lib.funcs import require_function, ensure_functions
 from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
 from analrangers.lib.xrefs import get_drefs_to
+from analrangers.lib.segments import data_seg
 from .report import handle_anal_exceptions
 
 class_tif = require_type('hh::game::GOComponentClass')
@@ -14,7 +15,7 @@ def find_goc_class(instantiator_thunk):
     goc_class_eas = []
 
     for dref in get_drefs_to(instantiator_thunk.start_ea):
-        if get_segm_name(getseg(dref)) != '.rodata':
+        if get_segm_name(getseg(dref)) != data_seg:
             continue
 
         if get_qword(dref) != instantiator_thunk.start_ea:

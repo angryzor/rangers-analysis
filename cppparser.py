@@ -7,12 +7,15 @@ try:
     import ida_name
     import ida_ua
     import ida_funcs
+    import ida_kernwin
     from ida_bytes import *
     from ida_typeinf import *
     from idc import *
 except:
     pass
 from ctypes import Structure, POINTER, c_uint, byref
+
+known_mangled_names = []
 
 # class _CXStringForSet(_CXString):
 #     def __del__(self):
@@ -323,6 +326,10 @@ def handle_stock_type(type):
     if stock_type_id != None:
         return tinfo_t.get_stock(stock_type_id)
 
+# There's a lot of rfl classes and the large number of merged COMDAT nullsubs cause a ton of spam.
+# Also these template classes are heavily inlined so to list them all isn't very useful.
+excluded_type_application_patterns = r'@rfl@app@|\?\$HashMap@|\?\$Array@|\?\$FixedArray@|\?\$MoveArray@|\?\$Handle@|\?\$Delegate@|\?\$StringMap@|\?\$Bitset@'
+
 def attempt_applying_type_to_name(mangled_name, type):
     address = get_name_ea_simple(mangled_name)
     if address != idaapi.BADADDR:
@@ -331,7 +338,8 @@ def attempt_applying_type_to_name(mangled_name, type):
         thunk_name = 'j_' + mangled_name
         if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
             attempt_applying_type_to_name(thunk_name, type)
-    else:
+    elif not re.search(excluded_type_application_patterns, mangled_name):
+        known_mangled_names.append(mangled_name)
         print(f'Unmatched name: {mangled_name}, cannot apply type.')
 
 def set_func_ea_name(ea, name):
@@ -439,7 +447,7 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
     else:
         # you can use one of these
         # data.cc = idaapi.CM_CC_THISCALL
-        data.cc = idaapi.CM_CC_THISCALL if class_tif else idaapi.CM_CC_FASTCALL
+        data.cc = idaapi.CM_CC_FASTCALL
     if class_tif:
         thistype = idaapi.tinfo_t()
         thistype.create_ptr(class_tif)
@@ -461,6 +469,16 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
             funcarg = idaapi.funcarg_t()
             funcarg.type = get_ida_type(argument)
             data.push_back(funcarg)
+    
+    if decl.kind == CursorKind.DESTRUCTOR:
+        flags_tif = idaapi.tinfo_t()
+        flags_tif.create_simple_type(BTF_UINT32)
+
+        funcarg = idaapi.funcarg_t()
+        funcarg.name = 'flags'
+        funcarg.type = flags_tif
+        data.push_back(funcarg)
+
     tif.create_func(data)
     tif.get_func_details(data) # TODO: what?
     return tif
@@ -479,39 +497,41 @@ def _create_forward_declaration(decl):
 def get_ida_type(type):
     decl = type.get_declaration()
 
-    # print(f'Type: {type.kind}, spelling: {type.spelling}')
+    # print(f'GET: {type.kind}, spelling: {type.spelling}')
 
     # If we don't have a declaration, we don't have a hash and can't cache the result.
     if decl.kind == CursorKind.NO_DECL_FOUND:
         return get_stock_or_build_ida_type(type)
 
-    cursor_hash = decl.hash
-    found = visited.get(cursor_hash)
+    found = visited.get(decl.hash) or define_ida_type(decl)
 
     # print(f'Type has declaration. kind: {decl.kind}, hash: {cursor_hash}, displayname: {decl.displayname}, usr: {decl.get_usr()}, typename: {get_decl_name(decl)}')
     # for member in decl.get_children():
     #     print('M:', member.kind, member.spelling)
 
-    if found:
-        # print(f'cache hit: {found}')
-        return found
-    else:
-        # print(f'cache miss')
-        tif = get_stock_or_build_ida_type(type)
-        visited[cursor_hash] = tif
-        return tif
+    # if found:
+    #     # print(f'cache hit: {found} (hash was {decl.hash})')
+    # else:
+    #     # print(f'cache miss (hash was {decl.hash})')
+    
+    if type.is_const_qualified():
+        found = found.copy()
+        found.set_const()
+    
+    return found
+
+def define_ida_type(decl):
+    # print('DEFINE', decl.displayname, decl.type.is_const_qualified())
+    tif = get_stock_or_build_ida_type(decl.type)
+    visited[decl.hash] = tif
+    return tif
 
 def get_stock_or_build_ida_type(type):
     stock_type = handle_stock_type(type)
 
     # print(f'stock results: {stock_type}')
 
-    tif = stock_type if stock_type != None else build_ida_type(type)
-    
-    if type.is_const_qualified():
-        tif.set_const()
-
-    return tif
+    return stock_type if stock_type != None else build_ida_type(type)
 
 def build_ida_type(type):
     # print(f'building type')
@@ -647,6 +667,8 @@ def handle_record(type):
     decl_name = get_decl_name(decl)
     forward_tif = _create_forward_declaration(decl)
 
+    process_cursor(decl)
+
     align = type.get_align()
     udt = idaapi.udt_type_data_t()
     if align > 1:
@@ -728,7 +750,7 @@ def handle_record(type):
                 method_ptr_tif.create_ptr(method_tif)
 
                 member_udt = idaapi.udt_member_t()
-                member_udt.name = member.spelling
+                member_udt.name = f'~{decl.spelling}' if vtbl_idx == 0 and member.kind == CursorKind.DESTRUCTOR and should_create_default_destructor else member.spelling
                 member_udt.type = method_ptr_tif
 
                 vtbl_udt.push_back(member_udt)
@@ -815,7 +837,7 @@ def handle_enum(type):
 @CursorHandler(CursorKind.TYPEDEF_DECL)
 @CursorHandler(CursorKind.TYPE_ALIAS_DECL)
 def handle_typedef_cursor(item):
-    get_ida_type(item.type)
+    define_ida_type(item)
 
 @CursorHandler(CursorKind.CLASS_DECL)
 # @CursorHandler(CursorKind.CLASS_TEMPLATE)
@@ -824,8 +846,9 @@ def handle_typedef_cursor(item):
 @CursorHandler(CursorKind.ENUM_DECL)
 def handle_struct(item):
     if item.is_definition():
-        process_cursor(item)
-        get_ida_type(item.type)
+        define_ida_type(item)
+    elif definition := item.get_definition():
+        _create_forward_declaration(definition)
 
 @CursorHandler(CursorKind.FUNCTION_DECL)
 @CursorHandler(CursorKind.VAR_DECL)
@@ -859,6 +882,7 @@ def parse_file(path, args=[]):
         for diagnostic in tx.diagnostics:
             print(f'diag: {diagnostic}')
     else:
+        known_mangled_names.clear()
         process_cursor(tx.cursor)
         garbage_collect()
 
@@ -868,5 +892,92 @@ def process_cursor(cursor):
             # print(item.kind, item.spelling, item.mangled_name, item.hash, item.displayname, item.canonical.mangled_name, item.get_usr())
             cursor_handlers[item.kind](item)
         else:
-            # print('unhandled', item.location.file.name, item.location.line, item.kind, item.spelling, item.mangled_name, item.hash, item.displayname, item.canonical.mangled_name, item.get_usr(), get_decl_name(item))
+            # print('unhandled', item.location.file.name, item.location.line, item.kind, item.spelling, item.mangled_name, item.hash, item.displayname, item.canonical.mangled_name, item.get_usr())
             continue
+
+def run_sync():
+    parse_file('X:\\home\\rtytgat\\rangers-api\\rangers-api\\rangers-api.cpp', ['--std=c++17'])
+
+class ChooseSDKName(ida_kernwin.Choose):
+    def __init__(self, names):
+        self.names = names
+        super().__init__('Known names in SDK', [['Name', ida_kernwin.Choose.CHCOL_PLAIN]], ida_kernwin.Choose.CH_MODAL)
+
+    def OnGetSize(self):
+        return len(self.names)
+
+    def OnGetLine(self, n):
+        name = self.names[n]
+        demangled_name = ida_name.demangle_name(name, 0)
+        return [demangled_name or name]
+    
+class ApplySDKNameActionHandler(ida_kernwin.action_handler_t):
+    def __init__(self, cpp_parser):
+        super().__init__()
+        self.cpp_parser = cpp_parser
+
+    def activate(self, ctx):
+        names = [*known_mangled_names] # intentional copy to remain consistent even if the known mangled names somehow change
+        choice = ida_kernwin.choose_choose(ChooseSDKName(names))
+
+        if choice != -1:
+            ida_name.set_name(ctx.cur_ea, names[choice], 0)
+
+        ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
+class SyncHandler(ida_kernwin.action_handler_t):
+    def __init__(self, cpp_parser):
+        super().__init__()
+        self.cpp_parser = cpp_parser
+
+    def activate(self, ctx):
+        run_sync()
+        ida_kernwin.update_action_state('cppparser:sync', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
+class CPPParserUIHooks(ida_kernwin.UI_Hooks):
+    def populating_widget_popup(self, widget, popup_handle, ctx):
+        ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:apply-sdk-name')
+
+class CPPParser:
+    def __init__(self):
+        sync_action = ida_kernwin.action_desc_t('cppparser:sync', 'Load SDK types', SyncHandler(self))
+        ida_kernwin.register_action(sync_action)
+        ida_kernwin.update_action_state('cppparser:sync', ida_kernwin.AST_ENABLE_ALWAYS)
+
+        apply_sdk_name_action = ida_kernwin.action_desc_t('cppparser:apply-sdk-name', 'Apply SDK name', ApplySDKNameActionHandler(self))
+        ida_kernwin.register_action(apply_sdk_name_action)
+        ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
+
+        ida_kernwin.create_toolbar('cppparser', 'CPP Parser')
+
+        ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:sync')
+
+        self.ui_hooks = CPPParserUIHooks()
+        self.ui_hooks.hook()
+        # global apply_sdk_name_hk
+        # apply_sdk_name_hk = ida_kernwin.add_hotkey('Shift+N', apply_sdk_name)
+
+    def dispose(self):
+        self.ui_hooks.unhook()
+        # ida_kernwin.del_hotkey(apply_sdk_name_hk)
+
+        ida_kernwin.detach_action_from_toolbar('cppparser', 'cppparser:sync')
+
+        ida_kernwin.delete_toolbar('cppparser')
+
+        ida_kernwin.unregister_action('cppparser:apply-sdk-name')
+        ida_kernwin.unregister_action('cppparser:sync')
+
+try:
+    cppparser
+    try:
+        cppparser.dispose()
+        del cppparser
+        print('cpp parser unregistered')
+    except Exception as err:
+        print(str(err))
+except:
+    cppparser = CPPParser()
+    print('cpp parser installed')

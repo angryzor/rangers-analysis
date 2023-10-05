@@ -46,8 +46,8 @@ def not_tails(start_ea, end_ea):
         start_ea = next_not_tail(start_ea)
 
 class CStrNotFoundException(NotFoundException):
-    def __init__(self, ctor_func):
-        super().__init__(f'Could not find GOCComponent subclass vtable for constructor {ctor_func.start_ea:x}')
+    def __init__(self, ea):
+        super().__init__(f'Could not find C string at {ea:x}')
 
 require_cstr = require_wrap(CStrNotFoundException, get_cstr)
 

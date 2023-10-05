@@ -1,7 +1,7 @@
 from ida_bytes import get_qword
 from ida_ua import o_reg
 from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo, class_name_to_backrefs
-from analrangers.lib.heuristics import guess_constructor_thunk_from_instantiator, require_class_name_from_constructor
+from analrangers.lib.heuristics import require_constructor_thunk_from_instantiator, require_class_name_from_constructor
 from analrangers.lib.funcs import require_function, ensure_functions, find_implementation, require_thunk
 from analrangers.lib.xrefs import get_code_drefs_to
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_mem_assignment_through_single_reg, read_insn
@@ -27,7 +27,7 @@ def handle_initializer(static_initializer_eas, singleton_list_ea, initializer_ea
 
     instantiator_thunk = ensure_functions(instantiator_thunk_ea)
     instantiator = find_implementation(instantiator_thunk)
-    constructor_thunk = guess_constructor_thunk_from_instantiator(instantiator)
+    constructor_thunk = require_constructor_thunk_from_instantiator(instantiator)
     constructor = find_implementation(constructor_thunk)
 
     destroyer_thunk = ensure_functions(destroyer_thunk_ea)
