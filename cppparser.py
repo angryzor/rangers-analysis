@@ -157,6 +157,10 @@ def parse_usr(usr):
             return parse_ident()
         if parse_re(r'\*'):
             return f'{parse_type()}*'
+        if parse_re(f'&&'):
+            return f'{parse_type()}&&'
+        if parse_re(f'&'):
+            return f'{parse_type()}&'
         if parse_re(r'F'):
             return_type = expect(parse_type())
             args = []
@@ -326,6 +330,11 @@ def handle_stock_type(type):
     if stock_type_id != None:
         return tinfo_t.get_stock(stock_type_id)
 
+class KnownMangledName:
+    def __init__(self, name, tif):
+        self.name = name
+        self.tif = tif
+
 # There's a lot of rfl classes and the large number of merged COMDAT nullsubs cause a ton of spam.
 # Also these template classes are heavily inlined so to list them all isn't very useful.
 excluded_type_application_patterns = r'@rfl@app@|\?\$HashMap@|\?\$Array@|\?\$FixedArray@|\?\$MoveArray@|\?\$Handle@|\?\$Delegate@|\?\$StringMap@|\?\$Bitset@'
@@ -339,7 +348,7 @@ def attempt_applying_type_to_name(mangled_name, type):
         if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
             attempt_applying_type_to_name(thunk_name, type)
     elif not re.search(excluded_type_application_patterns, mangled_name):
-        known_mangled_names.append(mangled_name)
+        known_mangled_names.append(KnownMangledName(mangled_name, type))
         print(f'Unmatched name: {mangled_name}, cannot apply type.')
 
 def set_func_ea_name(ea, name):
@@ -452,6 +461,7 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
         thistype = idaapi.tinfo_t()
         thistype.create_ptr(class_tif)
         funcarg = idaapi.funcarg_t()
+        funcarg.name = 'this'
         funcarg.type = thistype
         funcarg.flags = FAI_HIDDEN
         data.push_back(funcarg)
@@ -601,6 +611,7 @@ def handle_function_proto(type):
 
 @TypeHandler(TypeKind.POINTER)
 @TypeHandler(TypeKind.LVALUEREFERENCE)
+@TypeHandler(TypeKind.RVALUEREFERENCE)
 def handle_pointer(type):
     pointee = type.get_pointee()
     pointee_type = get_ida_type(pointee)
@@ -775,7 +786,9 @@ def handle_record(type):
                     vfunc_ea = ida_bytes.get_qword(vtbl_ea + 8 * i)
                     if not is_stock_function(vfunc_ea):
                         set_func_ea_name(vfunc_ea, mangled_member_name)
-                        # print(f'want to set {vtbl_name} member as {mangled_member_name}')
+                        if not (vtbl_idx == 0 and member.kind == CursorKind.DESTRUCTOR and should_create_default_destructor):
+                            attempt_applying_type_to_name(mangled_member_name, resolve_function(member.type, 0, forward_tif, member))
+                            # print(f'want to set {vtbl_name} member as {mangled_member_name}')
 
             if is_root:
                 vtbl_ptr_tif = idaapi.tinfo_t()
@@ -896,7 +909,7 @@ def process_cursor(cursor):
             continue
 
 def run_sync():
-    parse_file('X:\\home\\rtytgat\\rangers-api\\rangers-api\\rangers-api.cpp', ['--std=c++17'])
+    parse_file('C:\\Users\\Ruben Tytgat\\Documents\\rangers-api\\rangers-api\\rangers-api.cpp', ['--std=c++17'])
 
 class ChooseSDKName(ida_kernwin.Choose):
     def __init__(self, names):
@@ -907,7 +920,7 @@ class ChooseSDKName(ida_kernwin.Choose):
         return len(self.names)
 
     def OnGetLine(self, n):
-        name = self.names[n]
+        name = self.names[n].name
         demangled_name = ida_name.demangle_name(name, 0)
         return [demangled_name or name]
     
@@ -921,7 +934,10 @@ class ApplySDKNameActionHandler(ida_kernwin.action_handler_t):
         choice = ida_kernwin.choose_choose(ChooseSDKName(names))
 
         if choice != -1:
-            ida_name.set_name(ctx.cur_ea, names[choice], 0)
+            known = names[choice]
+
+            ida_name.set_name(ctx.cur_ea, known.name, 0)
+            attempt_applying_type_to_name(known.name, known.tif)
 
         ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
         return 0
