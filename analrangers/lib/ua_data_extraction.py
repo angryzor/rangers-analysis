@@ -1,6 +1,7 @@
 from ida_idaapi import BADADDR
 from ida_ua import insn_t, decode_insn, decode_prev_insn, print_insn_mnem, o_reg, o_displ
 from .iterators import find
+from .analysis_exceptions import AnalException
 
 class DecodedInsn:
     def __init__(self, insn, ea, size):
@@ -8,12 +9,17 @@ class DecodedInsn:
         self.ea = ea
         self.size = size
         self.mnem = print_insn_mnem(ea)
+    
+    def __str__(self):
+        return f'{self.ea:016x} [{self.size:02x}]: {self.mnem}'
 
 def decoded_insns_forward(start_ea, end_ea = None):
     insn_ea = start_ea
     while end_ea == None or insn_ea < end_ea:
         insn = insn_t()
         insn_size = decode_insn(insn, insn_ea)
+        if insn_size == 0:
+            raise AnalException(f"Couldn't decode instruction at {insn_ea:x}")
         yield DecodedInsn(insn, insn_ea, insn_size)
         insn_ea += insn_size
 
@@ -23,7 +29,7 @@ def decoded_insns_backward(start_ea, end_ea = None):
         insn = insn_t()
         prev_insn_ea = decode_prev_insn(insn, insn_ea)
         if prev_insn_ea == BADADDR:
-            break
+            raise AnalException(f"Couldn't decode previous instruction at {insn_ea:x}")
         yield DecodedInsn(insn, prev_insn_ea, insn_ea - prev_insn_ea)
         insn_ea = prev_insn_ea
 
@@ -100,4 +106,5 @@ def track_values(values, decoded_insns):
     for d in decoded_insns:
         for value_name in trackers.keys():
             track_reg(value_name, d)
+        # print(d, d.insn.Op1.is_reg(7), d.insn.Op1.reg, d.insn.Op1.specflag1, d.insn.Op1.specflag2, d.insn.Op1.specflag3, d.insn.Op1.specflag4, d.insn.Op1.specval, d.insn.Op2.value, {str(trackers[k]) for k in trackers})
         yield d, trackers

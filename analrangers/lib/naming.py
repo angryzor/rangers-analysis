@@ -1,7 +1,11 @@
-from ida_name import set_name, SN_AUTO
+from ida_name import set_name, SN_AUTO, get_nlist_size, get_nlist_name, get_nlist_ea
 from ida_bytes import get_flags, has_user_name
 from .heuristics import require_vtable, is_rtti_identified_vtable
 from .funcs import get_thunk_targets, is_stock_function
+
+def nlist_names():
+    for i in range(0, get_nlist_size()):
+        yield get_nlist_name(i), get_nlist_ea(i)
 
 def set_generated_vtable_name_through_ctor(ctor_func, class_name):
     vtable_ea = require_vtable(ctor_func)

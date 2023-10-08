@@ -635,42 +635,83 @@ def handle_typedef(type):
         save_tinfo(tif, get_decl_name(decl))
         return tif
 
-def override_equality(a, b):
-    a_params = [arg.type for arg in a.get_arguments()]
-    b_params = [arg.type for arg in b.get_arguments()]
-
-    return a.kind == CursorKind.DESTRUCTOR and b.kind == CursorKind.DESTRUCTOR or (a.spelling == b.spelling and a_params == b_params)
-
-def get_vtables(type):
-    decl = type.get_declaration()
-
-    base_vtables = []
-
-    for member in decl.get_children():        
-        if base_vtables.kind == CursorKind.CXX_BASE_SPECIFIER:
-            child_vtables, _ = get_vtables(member.type)
-            vtables += child_vtables
-    
-    result_vtables = [[]] if len(base_vtables) == 0 else base_vtables
-
-    def add_virtual(member):
-        for vtbl in result_vtables:
-            i = vtbl.index(lambda f: override_equality(member, f))
-
-            if i != -1:
-                vtbl[i] = member
-                return
-            
-        result_vtables[0].append(member)
-
-    for member in decl.get_children():
-        if member.kind == (CursorKind.CXX_METHOD, CursorKind.DESTRUCTOR) and member.is_virtual_method():
-            add_virtual(member)
-    
-    return result_vtables, len(base_vtables) == 0
-
 def is_stock_function(ea):
     return ida_name.get_name(ea).startswith('nullsub_') or ida_name.get_name(ea) == 'pure_virtual_function' or ida_bytes.get_bytes(ea, 3) == b'\xB0\x01\xC3' or ida_bytes.get_bytes(ea, 3) == b'\x32\xC0\xC3'
+
+class VFunc:
+    def __init__(self, class_tif):
+        self.class_tif = class_tif
+    
+    def overrides(self, that):
+        return (self.is_dtor() and that.is_dtor()) or (self.get_name() == that.get_name() and [t.get_canonical() for t in self.get_arguments()] == [t.get_canonical() for t in that.get_arguments()])
+
+class DeclVFunc(VFunc):
+    def __init__(self, decl, class_tif):
+        super().__init__(class_tif)
+        self.decl = decl
+    
+    def is_dtor(self):
+        return self.decl.kind == CursorKind.DESTRUCTOR
+    
+    def get_name(self):
+        return self.decl.spelling
+    
+    def get_mangled_name(self):
+        return self.decl.mangled_name
+    
+    def get_arguments(self):
+        return self.decl.type.argument_types()
+    
+    def get_tif(self):
+        return resolve_function(self.decl.type, 0, self.class_tif, self.decl)
+    
+class DefaultDtorVFunc(VFunc):
+    def __init__(self, class_decl, class_tif):
+        super().__init__(class_tif)
+        self.class_decl = class_decl
+    
+    def is_dtor(self):
+        return True
+    
+    def get_name(self):
+        return f'~{self.class_decl.spelling}'
+    
+    def get_mangled_name(self):
+        mangled_vtable_name = self.class_decl.get_mangled_vtable_name([])
+        mangled_class_name = mangled_vtable_name[4:-4]
+        return f'??_D{mangled_class_name}@QEAAXXZ'
+
+    def get_tif(self):
+        data = idaapi.func_type_data_t()
+        data.stkargs = 0
+        data.cc = idaapi.CM_CC_FASTCALL
+
+        ret_type = idaapi.tinfo_t()
+        ret_type.create_simple_type(BTF_VOID)
+        data.rettype = ret_type
+
+        this_type = idaapi.tinfo_t()
+        this_type.create_ptr(self.class_tif)
+
+        this_funcarg = idaapi.funcarg_t()
+        this_funcarg.name = 'this'
+        this_funcarg.type = this_type
+        this_funcarg.flags = FAI_HIDDEN
+        data.push_back(this_funcarg)
+
+        flags_tif = idaapi.tinfo_t()
+        flags_tif.create_simple_type(BTF_UINT32)
+
+        flags_funcarg = idaapi.funcarg_t()
+        flags_funcarg.name = 'flags'
+        flags_funcarg.type = flags_tif
+        data.push_back(flags_funcarg)
+
+        tif = idaapi.tinfo_t()
+        tif.create_func(data)
+        tif.get_func_details(data) # TODO: what?
+
+        return tif
 
 @TypeHandler(TypeKind.RECORD)
 def handle_record(type):
@@ -689,8 +730,10 @@ def handle_record(type):
     vtbl_infos = []
     is_root = False
 
-    def add_override(member):
+    def create_vfunc(member):
         nonlocal is_root
+
+        f = DeclVFunc(member, forward_tif)
 
         if len(vtbl_infos) == 0:
             is_root = True
@@ -698,11 +741,11 @@ def handle_record(type):
 
         for vtbl_info in vtbl_infos:
             for i, vtbl_member in enumerate(vtbl_info.members):
-                if override_equality(member, vtbl_member):
-                    vtbl_info.members[i] = member
+                if f.overrides(vtbl_member):
+                    vtbl_info.members[i] = f
                     return
             
-        vtbl_infos[0].members.append(member)
+        vtbl_infos[0].members.append(f)
 
     def create_bases():
         delayed_base_udts = []
@@ -741,27 +784,28 @@ def handle_record(type):
             udt.push_back(member_udt)
 
     def create_vtables():
-        should_create_default_destructor = True
-
         for member in decl.get_children():
             if member.kind in (CursorKind.CXX_METHOD, CursorKind.DESTRUCTOR) and member.is_virtual_method():
-                add_override(member)
+                create_vfunc(member)
+        
+        # Create a default destructor if none was specified and we have vtables.
+        if len(vtbl_infos) > 0 and not any(map(lambda member: member.kind == CursorKind.DESTRUCTOR and member.is_virtual_method(), decl.get_children())):
+            vf = DefaultDtorVFunc(decl, forward_tif)
+            if is_root:
+                vtbl_infos[0].members.insert(0, vf)
+            else:
+                vtbl_infos[0].members[0] = vf
 
-                if member.kind == CursorKind.DESTRUCTOR:
-                    should_create_default_destructor = False
-
-        for vtbl_idx, vtbl_info in enumerate(vtbl_infos):
+        for vtbl_info in vtbl_infos:
             vtbl_udt = idaapi.udt_type_data_t()
             vtbl_udt.taudt_bits |= TAUDT_VFTABLE
 
             for member in vtbl_info.members:
-                method_tif = resolve_function(member.type, 0, forward_tif, member)
-
                 method_ptr_tif = idaapi.tinfo_t()
-                method_ptr_tif.create_ptr(method_tif)
+                method_ptr_tif.create_ptr(member.get_tif())
 
                 member_udt = idaapi.udt_member_t()
-                member_udt.name = f'~{decl.spelling}' if vtbl_idx == 0 and member.kind == CursorKind.DESTRUCTOR and should_create_default_destructor else member.spelling
+                member_udt.name = member.get_name()
                 member_udt.type = method_ptr_tif
 
                 vtbl_udt.push_back(member_udt)
@@ -775,20 +819,16 @@ def handle_record(type):
             attempt_applying_type_to_name(mangled_vtable_name, vtbl_tif)
 
             vtbl_ea = ida_name.get_name_ea(BADADDR, mangled_vtable_name)
+            print(f'trying to set vtable {mangled_vtable_name} at {vtbl_ea or 0:x}')
             if vtbl_ea != BADADDR:
                 for i, member in enumerate(vtbl_info.members):
-                    if vtbl_idx == 0 and member.kind == CursorKind.DESTRUCTOR and should_create_default_destructor:
-                        mangled_class_name = mangled_vtable_name[4:-4]
-                        mangled_member_name = f'??_D{mangled_class_name}@QEAAXXZ'
-                    else:
-                        mangled_member_name = member.mangled_name
-
                     vfunc_ea = ida_bytes.get_qword(vtbl_ea + 8 * i)
+
                     if not is_stock_function(vfunc_ea):
+                        mangled_member_name = member.get_mangled_name()
+                        print(f'setting {vfunc_ea:x} with name {mangled_member_name} to {member.get_tif()}')
                         set_func_ea_name(vfunc_ea, mangled_member_name)
-                        if not (vtbl_idx == 0 and member.kind == CursorKind.DESTRUCTOR and should_create_default_destructor):
-                            attempt_applying_type_to_name(mangled_member_name, resolve_function(member.type, 0, forward_tif, member))
-                            # print(f'want to set {vtbl_name} member as {mangled_member_name}')
+                        attempt_applying_type_to_name(mangled_member_name, member.get_tif())
 
             if is_root:
                 vtbl_ptr_tif = idaapi.tinfo_t()
@@ -897,7 +937,7 @@ def parse_file(path, args=[]):
     else:
         known_mangled_names.clear()
         process_cursor(tx.cursor)
-        garbage_collect()
+        # garbage_collect()
 
 def process_cursor(cursor):
     for item in cursor.get_children():

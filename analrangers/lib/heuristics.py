@@ -1,20 +1,24 @@
 import re
 from ida_name import get_name
 from ida_segment import get_segm_name, getseg
-from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem, o_near
+from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem, o_near, o_imm
 from ida_bytes import get_qword, get_flags, is_code, has_user_name
 from ida_idaapi import BADADDR
-from ida_funcs import get_func
+from ida_funcs import get_func, get_fchunk
+from ida_idp import reg_accesses_t, ph_get_reg_accesses
 from .util import get_cstr
 from .ua_data_extraction import find_insn_forward, read_insn, decoded_insns_forward, track_values
-from .xrefs import get_drefs_to, get_safe_crefs_to
+from .xrefs import get_drefs_to, get_safe_crefs_to, get_code_drefs_to
 from .analysis_exceptions import AnalException
 from .require import require_wrap, NotFoundException
-from .funcs import require_function, require_thunk, FunctionNotFoundException
+from .funcs import require_function, require_thunk, ensure_functions, find_implementation, FunctionNotFoundException
 from .iterators import require_unique, find, UniqueNotFoundException
 from .segments import rdata_seg
 
 def guess_vtable_from_constructor(f):
+    # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
+    f = get_fchunk(f.start_ea)
+
     last_ea = f.start_ea
     values = {}
     found_vtable_load = None
@@ -81,6 +85,9 @@ class ConstructorNotFoundException(NotFoundException):
 require_constructor_thunk_from_instantiator = require_wrap(VTableNotFoundException, guess_constructor_thunk_from_instantiator)
 
 def looks_like_instantiator(f):
+    # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
+    f = get_fchunk(f.start_ea)
+
     # Check if we try to read out the vtable of rcx, presumably the allocator.
     vtbl_res = find(
         lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_phrase and i[0].insn.Op2.reg in i[1]['allocator'].regs,
@@ -151,14 +158,17 @@ def guess_subclass_constructors_from_constructor(f):
         except FunctionNotFoundException:
             print(f'warn: ignoring {cref:x} in subconstructor search as it is not a function')
 
+def estimate_class_name_from_vtable_name(name):
+    m = re.match(r'^\?\?_7(.+)@@6B@$', name)
+    if m:
+        return m.group(1)
+
 def estimate_class_name_from_vtable(ea):
     name = get_name(ea)
     if name == None:
         return None
 
-    m = re.match(r'^\?\?_7(.+)@@6B@$', name)
-    if m:
-        return m.group(1)
+    return estimate_class_name_from_vtable_name(name)
 
 def estimate_class_name_from_constructor(f):
     vtable_ea = guess_vtable_from_constructor(f)
@@ -170,6 +180,42 @@ class ClassNameNotFoundException(NotFoundException):
         super().__init__(f'Could not find vtable-based class name for constructor {ctor_func.start_ea:x}')
 
 require_class_name_from_constructor = require_wrap(ClassNameNotFoundException, estimate_class_name_from_constructor)
+
+def is_deleting_destructor(dtor):
+    def is_test_insn(i):
+        if not i[0].mnem == 'test' or not i[0].insn.Op1.type == o_reg: return False
+
+        accesses = reg_accesses_t()
+        ph_get_reg_accesses(accesses, i[0].insn, 0)
+
+        return i[0].insn.Op2.type == o_imm and i[0].insn.Op2.value == 1 and accesses[0].regnum in i[1]['flags'].regs
+
+    return find(is_test_insn, track_values({ 'flags': 2 }, decoded_insns_forward(dtor.start_ea, dtor.end_ea)))
+
+def guess_vbase_destructor_thunk_from_deleting_destructor(dtor):
+    if call_insn := find_insn_forward(lambda i: i.mnem == 'call', dtor.start_ea, dtor.end_ea):
+        if call_insn.insn.Op1.type == o_near:
+            return require_function(call_insn.insn.Op1.addr)
+
+class VBaseDtorNotFoundException(NotFoundException):
+    def __init__(self, dtor_func):
+        super().__init__(f'Could not find vbase destructor for deleting destructor {dtor_func.start_ea:x}')
+
+require_vbase_destructor_from_deleting_destructor = require_wrap(VBaseDtorNotFoundException, estimate_class_name_from_constructor)
+
+def guess_constructor_from_vtable(vtable_ea):
+    dtor_thunk = ensure_functions(get_qword(vtable_ea))
+    dtor = find_implementation(dtor_thunk)
+    
+    if is_deleting_destructor(dtor):
+        base_dtor_thunk = guess_vbase_destructor_thunk_from_deleting_destructor(dtor)
+        base_dtor = base_dtor_thunk and find_implementation(base_dtor_thunk)
+    else:
+        base_dtor_thunk, base_dtor = None, None
+
+    ctor_xrefs = filter(lambda i: i and i.start_ea != dtor.start_ea and (not base_dtor or i.start_ea != base_dtor.start_ea) and looks_like_constructor(i) and guess_vtable_from_constructor(i) == vtable_ea, map(get_func, get_code_drefs_to(vtable_ea)))
+
+    return require_unique(f"Could't find unique constructor for vtable {vtable_ea:x}", ctor_xrefs)
 
 def is_rtti_identified_vtable(ea):
     existing_name = get_name(ea)
@@ -203,19 +249,24 @@ def get_getter_xref(ea):
         if is_code(get_flags(xref)) and print_insn_mnem(xref) == 'lea' and print_insn_mnem(xref + 7) == 'retn':
             return xref
 
+def find_instantiator_from_constructor(ctor_func):
+    ctor_thunk = require_thunk(ctor_func)
+
+    try:
+        instantiator_func = guess_instantiator_from_constructor(ctor_func)
+        instantiator_thunk = require_thunk(instantiator_func)
+    except UniqueNotFoundException:
+        instantiator_func = None
+        instantiator_thunk = None
+        print(f'info: No instantiator found for {ctor_func.start_ea:x}. It may be an abstract superclass.')
+
+    return instantiator_thunk, instantiator_func, ctor_thunk
+
 # Attempts to find all classes of a class hierarchy.
 def discover_class_hierarchy(base_ctor):
     for ctor_func in guess_subclass_constructors_from_constructor(base_ctor):
-        ctor_thunk = require_thunk(ctor_func)
+        instantiator_and_ctor_thunk = find_instantiator_from_constructor(ctor_func)
 
-        try:
-            instantiator_func = guess_instantiator_from_constructor(ctor_func)
-            instantiator_thunk = require_thunk(instantiator_func)
-        except UniqueNotFoundException:
-            instantiator_func = None
-            instantiator_thunk = None
-            print(f'info: No instantiator found for {ctor_func.start_ea:x}. It may be an abstract superclass.')
-        
-        yield instantiator_thunk, instantiator_func, ctor_thunk, ctor_func, base_ctor
+        yield *instantiator_and_ctor_thunk, ctor_func, base_ctor
 
         yield from discover_class_hierarchy(ctor_func)

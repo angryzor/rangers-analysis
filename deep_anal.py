@@ -12,25 +12,28 @@ from analrangers.informed_analysis.object_classes import find_obj_classes
 from analrangers.informed_analysis.state_descs import find_state_descs
 from analrangers.informed_analysis.math_objects import find_common_math_objects
 from analrangers.informed_analysis.singletons import find_singletons
+from analrangers.informed_analysis.ctors_and_dtors import find_ctors_and_dtors
 from analrangers.informed_analysis.report import clear_report, print_report
 
 clear_report()
 
 static_initializer_eas = find_static_initializers()
 
-print('=== SERVICE ANALYSIS ===')
-find_services()
-print('=== REFLECTION ANALYSIS ===')
-find_rfl_statics(static_initializer_eas)
-print('=== GOC ANALYSIS ===')
-find_gocs()
-print('=== GAMEOBJECT ANALYSIS ===')
-find_obj_classes()
-print('=== STATEDESC ANALYSIS ===')
-find_state_descs(static_initializer_eas)
-print('=== FLOATING POINT MATH OBJECT ANALYSIS ===')
-find_common_math_objects()
-print('=== SINGLETON ANALYSIS ===')
-find_singletons(static_initializer_eas)
+# print('=== SERVICE ANALYSIS ===')
+# find_services()
+# print('=== REFLECTION ANALYSIS ===')
+# find_rfl_statics(static_initializer_eas)
+# print('=== GOC ANALYSIS ===')
+# find_gocs()
+# print('=== GAMEOBJECT ANALYSIS ===')
+# find_obj_classes()
+# print('=== STATEDESC ANALYSIS ===')
+# find_state_descs(static_initializer_eas)
+# # print('=== FLOATING POINT MATH OBJECT ANALYSIS ===')
+# # find_common_math_objects()
+# print('=== SINGLETON ANALYSIS ===')
+# find_singletons(static_initializer_eas)
+print('=== VTABLE BASED CTOR/DTOR ANALYSIS ===')
+find_ctors_and_dtors()
 
 print_report()
