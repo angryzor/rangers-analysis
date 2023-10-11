@@ -20,7 +20,7 @@ def handle_initializer(class_name, vtable_ea):
     print('found instantiators, now setting names')
 
     if instantiator != constructor:
-        set_generated_func_name(constructor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_generated_func_name(constructor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
 
     if instantiator_thunk:
         set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')

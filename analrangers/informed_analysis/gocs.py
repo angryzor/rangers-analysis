@@ -50,7 +50,7 @@ def handle_goc_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
     if instantiator_thunk != None:
         set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
     if ctor_func != instantiator_func:
-        set_generated_func_name(ctor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_generated_func_name(ctor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
 
     if class_ea == None:
         print(f'warn: Could not find a reliable hh::game::GOComponentClass xref for constructor {ctor_thunk.start_ea:x} (instantiator thunk was {instantiator_thunk.start_ea if instantiator_thunk else 0:x}). Constructor name has been deduced through vtable.')

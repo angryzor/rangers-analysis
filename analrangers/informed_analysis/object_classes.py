@@ -37,7 +37,7 @@ def handle_obj_class(obj_class_ea):
     set_generated_name(obj_class_ea, f'?staticClass@{class_name}@@0PEAVGameObjectClass@game@hh@@EA')
     set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
     if instantiator != constructor_thunk:
-        set_generated_func_name(constructor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_generated_func_name(constructor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
 
     if using_fallback_name:
         set_generated_vtable_name_through_ctor(constructor, class_name)

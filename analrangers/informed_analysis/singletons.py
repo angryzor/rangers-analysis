@@ -42,7 +42,7 @@ def handle_initializer(static_initializer_eas, singleton_list_ea, initializer_ea
 
     set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{backrefs}@PEAVIAllocator@fnd@csl@@@Z')
     set_generated_func_name(destroyer_thunk, f'?Destroy@{class_name}@@CAXPEAV{backrefs}@@Z')
-    set_generated_func_name(constructor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+    set_generated_func_name(constructor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
     set_generated_func_name(initializer, f'??__EsingletonInitNode@{class_name}@@0VSingletonInitNode@fnd@hh@@B')
 
 def find_singletons(static_initializer_eas):

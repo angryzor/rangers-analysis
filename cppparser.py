@@ -14,6 +14,9 @@ try:
 except:
     pass
 from ctypes import Structure, POINTER, c_uint, byref
+import os
+
+conf.set_library_file(os.path.join(os.path.dirname(__file__), 'libclang.dll'))
 
 known_mangled_names = []
 
@@ -64,6 +67,7 @@ Cursor.get_mangled_vtable_name = get_mangled_vtable_name
 
 def parse_usr(usr):
     initial_usr = usr
+    substitutions = []
 
     def expect(m):
         if m:
@@ -118,20 +122,36 @@ def parse_usr(usr):
             return f'<{", ".join(args)}>'
         
         
-    def parse_type():
+    def parse_builtin_type():
+        if parse_re(r'v'): return 'void'
+        if parse_re(r'b'): return 'bool'
+        if parse_re(r'c'): return 'unsigned char'
+        if parse_re(r'u'): return 'char8_t'
+        if parse_re(r'q'): return 'char16_t'
+        if parse_re(r'w'): return 'char32_t'
+        if parse_re(r's'): return 'unsigned short'
+        if parse_re(r'i'): return 'unsigned int'
+        if parse_re(r'l'): return 'unsigned long'
+        if parse_re(r'k'): return 'unsigned long long'
+        if parse_re(r'j'): return 'unsigned __int128'
+        if parse_re(r'C'): return 'char'
+        if parse_re(r'r'): return 'signed char'
+        if parse_re(r'W'): return 'wchar_t'
+        if parse_re(r'S'): return 'short'
+        if parse_re(r'I'): return 'int'
+        if parse_re(r'L'): return 'long'
+        if parse_re(r'K'): return 'long long'
+        if parse_re(r'J'): return '__int128'
+        if parse_re(r'h'): return '__fp16'
+        if parse_re(r'f'): return 'float'
+        if parse_re(r'd'): return 'double'
+        if parse_re(r'D'): return 'long double'
+        if parse_re(r'Q'): return '__float128'
+        if parse_re(r'n'): return 'nullptr'
+
+    def parse_non_builtin_type():
         nonlocal usr
 
-        mods = parse_re(r'[1-7]')
-        if mods:
-            modflags = int(mods)
-            m = ''
-            if modflags & 1:
-                m += 'const '
-            if modflags & 2:
-                m += 'volatile '
-            if modflags & 4:
-                m += 'restrict '
-            return f'{m}{parse_type()}'
         if parse_re(r'@N@|@S@|@E@'):
             name = expect(parse_ident())
             args = parse_template_argument_list()
@@ -161,6 +181,11 @@ def parse_usr(usr):
             return f'{parse_type()}&&'
         if parse_re(f'&'):
             return f'{parse_type()}&'
+        if parse_re(r'%'):
+            class_type = expect(parse_type())
+            func_type = expect(parse_type())
+            first_space_index = func_type.index(' ')
+            return f'{func_type[:first_space_index]} ({class_type}::*){func_type[first_space_index + 1:]}'
         if parse_re(r'F'):
             return_type = expect(parse_type())
             args = []
@@ -171,32 +196,27 @@ def parse_usr(usr):
                 args.append(expect(parse_type()))
 
             return f'{return_type} ({", ".join(args)})'
-        # Process primitives
-        if parse_re(r'v'): return 'void'
-        if parse_re(r'b'): return 'bool'
-        if parse_re(r'c'): return 'unsigned char'
-        if parse_re(r'u'): return 'char8_t'
-        if parse_re(r'q'): return 'char16_t'
-        if parse_re(r'w'): return 'char32_t'
-        if parse_re(r's'): return 'unsigned short'
-        if parse_re(r'i'): return 'unsigned int'
-        if parse_re(r'l'): return 'unsigned long'
-        if parse_re(r'k'): return 'unsigned long long'
-        if parse_re(r'j'): return 'unsigned __int128'
-        if parse_re(r'C'): return 'char'
-        if parse_re(r'r'): return 'signed char'
-        if parse_re(r'W'): return 'wchar_t'
-        if parse_re(r'S'): return 'short'
-        if parse_re(r'I'): return 'int'
-        if parse_re(r'L'): return 'long'
-        if parse_re(r'K'): return 'long long'
-        if parse_re(r'J'): return '__int128'
-        if parse_re(r'h'): return '__fp16'
-        if parse_re(r'f'): return 'float'
-        if parse_re(r'd'): return 'double'
-        if parse_re(r'D'): return 'long double'
-        if parse_re(r'Q'): return '__float128'
-        if parse_re(r'n'): return 'nullptr'
+
+    def parse_type():
+        if mods := parse_re(r'[1-7]'):
+            modflags = int(mods)
+            m = ''
+            if modflags & 1:
+                m += 'const '
+            if modflags & 2:
+                m += 'volatile '
+            if modflags & 4:
+                m += 'restrict '
+            return f'{m}{parse_type()}'
+        if substExpr := parse_re(r'S[0-9]+_'):
+            substIdx = int(substExpr[1:-1])
+            return substitutions[substIdx]
+        if res := parse_builtin_type():
+            return res
+        if res := parse_non_builtin_type():
+            substitutions.append(res)
+            return res
+
     
     def parse_decl():
         typ = parse_type()
@@ -342,12 +362,13 @@ excluded_type_application_patterns = r'@rfl@app@|\?\$HashMap@|\?\$Array@|\?\$Fix
 def attempt_applying_type_to_name(mangled_name, type):
     address = get_name_ea_simple(mangled_name)
     if address != idaapi.BADADDR:
+        print(f'setting {address:x} with name {mangled_name} to {type}')
         idaapi.apply_tinfo(address, type, idaapi.TINFO_DELAYFUNC | idaapi.TINFO_DEFINITE)
 
         thunk_name = 'j_' + mangled_name
         if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
             attempt_applying_type_to_name(thunk_name, type)
-    elif not re.search(excluded_type_application_patterns, mangled_name):
+    else: #if not re.search(excluded_type_application_patterns, mangled_name):
         known_mangled_names.append(KnownMangledName(mangled_name, type))
         print(f'Unmatched name: {mangled_name}, cannot apply type.')
 
@@ -511,9 +532,9 @@ def get_ida_type(type):
 
     # If we don't have a declaration, we don't have a hash and can't cache the result.
     if decl.kind == CursorKind.NO_DECL_FOUND:
-        return get_stock_or_build_ida_type(type)
-
-    found = visited.get(decl.hash) or define_ida_type(decl)
+        found = get_stock_or_build_ida_type(type)
+    else:
+        found = visited.get(decl.hash) or define_ida_type(decl)
 
     # print(f'Type has declaration. kind: {decl.kind}, hash: {cursor_hash}, displayname: {decl.displayname}, usr: {decl.get_usr()}, typename: {get_decl_name(decl)}')
     # for member in decl.get_children():
@@ -618,6 +639,44 @@ def handle_pointer(type):
 
     tif = idaapi.tinfo_t()
     tif.create_ptr(pointee_type)
+    return tif
+
+def is_multi_inherited_class(decl):
+    base_decls = [member for member in decl.get_children() if member.kind == CursorKind.CXX_BASE_SPECIFIER]
+    if len(base_decls) == 0: return False
+    if len(base_decls) > 1: return True
+    return is_multi_inherited_class(base_decls[0])
+
+@TypeHandler(TypeKind.MEMBERPOINTER)
+def handle_member_pointer(type):
+    class_type = type.get_class_type()
+    ptr_tif = handle_pointer(type)
+    
+    if not is_multi_inherited_class(class_type.get_canonical().get_declaration()):
+        return ptr_tif
+    
+    udt = idaapi.udt_type_data_t()
+
+    ptr_member_udt = idaapi.udt_member_t()
+    ptr_member_udt.name = 'ptr'
+    ptr_member_udt.offset = 0
+    ptr_member_udt.type = ptr_tif
+    udt.push_back(ptr_member_udt)
+
+    adjustor_tif = idaapi.tinfo_t()
+    adjustor_tif.create_simple_type(BTF_INT32)
+
+    adjustor_member_udt = idaapi.udt_member_t()
+    adjustor_member_udt.name = 'adjustor'
+    adjustor_member_udt.offset = 0
+    adjustor_member_udt.type = adjustor_tif
+    udt.push_back(adjustor_member_udt)
+
+    udt.sda = 4
+    udt.taudt_bits |= TAUDT_CPPOBJ
+
+    tif = idaapi.tinfo_t()
+    tif.create_udt(udt, BTF_STRUCT)
     return tif
 
 @TypeHandler(TypeKind.TYPEDEF)
@@ -826,7 +885,6 @@ def handle_record(type):
 
                     if not is_stock_function(vfunc_ea):
                         mangled_member_name = member.get_mangled_name()
-                        print(f'setting {vfunc_ea:x} with name {mangled_member_name} to {member.get_tif()}')
                         set_func_ea_name(vfunc_ea, mangled_member_name)
                         attempt_applying_type_to_name(mangled_member_name, member.get_tif())
 

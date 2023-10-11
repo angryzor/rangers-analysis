@@ -48,7 +48,7 @@ def handle_state_desc(xref, static_initializers):
 
     # Set constructor info
     if ctor_thunk:
-        set_generated_func_name(ctor_thunk, f'??0{class_name}@@AEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_generated_func_name(ctor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
 
     # Set initializer info
     set_generated_func_name(initializer_thunk, f'??__EstaticInstance@{class_name}@@0VStateDesc@ut@hh@@B')
