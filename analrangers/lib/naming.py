@@ -3,6 +3,24 @@ from ida_bytes import get_flags, has_user_name
 from .heuristics import require_vtable, is_rtti_identified_vtable
 from .funcs import get_thunk_targets, is_stock_function
 
+def create_name(fmt, *identifiers):
+    backrefs = []
+    processed_class_names = []
+
+    for identifier in identifiers:
+        mangled_class_name = ''
+
+        for fragment in identifier:
+            if p := next(filter(lambda p: p[1] == fragment, enumerate(backrefs)), None):
+                mangled_class_name += str(p[0])
+            else:
+                mangled_class_name += f'{fragment}@'
+                backrefs.append(fragment)
+
+        processed_class_names.append(mangled_class_name)
+
+    return fmt.format(*processed_class_names)
+
 def nlist_names():
     for i in range(0, get_nlist_size()):
         yield get_nlist_name(i), get_nlist_ea(i)

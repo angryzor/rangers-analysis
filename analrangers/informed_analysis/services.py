@@ -34,7 +34,7 @@ def handle_func_parent(parent_ea):
 
     getter_ea = get_getter_xref(service_ea)
     if getter_ea != None:
-        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVGameServiceClass@game@hh@@XZ')
+        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@SAPEAVGameServiceClass@game@hh@@XZ')
     else:
         print(f'warn: no GetClass function found for service class at {service_ea:x}')
 

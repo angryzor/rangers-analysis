@@ -63,7 +63,7 @@ def handle_goc_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
 
     getter_ea = get_getter_xref(class_ea)
     if getter_ea != None:
-        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVGOComponentClass@game@hh@@XZ')
+        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@SAPEAVGOComponentClass@game@hh@@XZ')
     else:
         print(f'warn: no GetClass function found for GOComponent class at {class_ea:x}')
 

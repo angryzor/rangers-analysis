@@ -16,7 +16,8 @@ except:
 from ctypes import Structure, POINTER, c_uint, byref
 import os
 
-conf.set_library_file(os.path.join(os.path.dirname(__file__), 'libclang.dll'))
+if not conf.loaded:
+    conf.set_library_file(os.path.join(os.path.dirname(__file__), 'libclang.dll'))
 
 known_mangled_names = []
 
@@ -471,6 +472,7 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
     data.stkargs = 0
     data.spoiled.clear()
     data.clear()
+
     # ida only supports cdecl + ellipsis when varargs exists
     if type.is_function_variadic():
         data.cc = idaapi.CM_CC_ELLIPSIS
@@ -478,6 +480,7 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
         # you can use one of these
         # data.cc = idaapi.CM_CC_THISCALL
         data.cc = idaapi.CM_CC_FASTCALL
+
     if class_tif:
         thistype = idaapi.tinfo_t()
         thistype.create_ptr(class_tif)
@@ -487,7 +490,26 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
         funcarg.flags = FAI_HIDDEN
         data.push_back(funcarg)
 
-    data.rettype = thistype if decl.kind == CursorKind.CONSTRUCTOR else get_ida_type(type.get_result())
+    if decl.kind == CursorKind.CONSTRUCTOR:
+        data.rettype = thistype
+    else:
+        return_type = type.get_result()
+        return_tif = get_ida_type(return_type)
+        
+        if return_type.get_canonical().kind in (TypeKind.RECORD, TypeKind.CONSTANTARRAY, TypeKind.INCOMPLETEARRAY, TypeKind.VARIABLEARRAY, TypeKind.DEPENDENTSIZEDARRAY):
+            real_return_tif = idaapi.tinfo_t()
+            real_return_tif.create_ptr(return_tif)
+
+            data.rettype = real_return_tif
+
+            funcarg = idaapi.funcarg_t()
+            funcarg.name = 'retstr'
+            funcarg.type = real_return_tif
+            funcarg.flags = FAI_STRUCT | FAI_RETPTR
+
+            data.push_back(funcarg)
+        else:
+            data.rettype = return_tif
 
     if decl.kind != CursorKind.NO_DECL_FOUND:
         for argument in decl.get_arguments():
@@ -995,7 +1017,7 @@ def parse_file(path, args=[]):
     else:
         known_mangled_names.clear()
         process_cursor(tx.cursor)
-        # garbage_collect()
+        garbage_collect()
 
 def process_cursor(cursor):
     for item in cursor.get_children():
