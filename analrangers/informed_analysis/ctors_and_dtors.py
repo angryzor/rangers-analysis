@@ -1,12 +1,9 @@
 # Names constructors and destructors through the vtable for all known vtables.
 
 from ida_bytes import get_qword
-from ida_name import get_demangled_name
-from ida_funcs import get_func
-from analrangers.lib.util import class_name_to_backrefs
-from analrangers.lib.heuristics import estimate_class_name_from_vtable_name, guess_constructor_from_vtable, find_instantiator_from_constructor, is_deleting_destructor, guess_vbase_destructor_thunk_from_deleting_destructor
-from analrangers.lib.naming import set_generated_func_name, nlist_names
-from analrangers.lib.funcs import ensure_functions, find_implementation
+from analrangers.lib.heuristics import estimate_class_name_from_vtable_name, guess_constructor_from_vtable, find_instantiator_from_constructor
+from analrangers.lib.naming import nlist_names, set_simple_constructor_func_name, set_private_instantiator_func_name, set_destructor_func_name
+from analrangers.lib.funcs import ensure_functions
 from .report import handle_anal_exceptions
 
 def handle_initializer(class_name, vtable_ea):
@@ -20,21 +17,12 @@ def handle_initializer(class_name, vtable_ea):
     print('found instantiators, now setting names')
 
     if instantiator != constructor:
-        set_generated_func_name(constructor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_simple_constructor_func_name(constructor_thunk, class_name)
 
     if instantiator_thunk:
-        set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
+        set_private_instantiator_func_name(instantiator_thunk, class_name)
     
-    dtor_thunk = ensure_functions(dtor_thunk_ea)
-    dtor = find_implementation(dtor_thunk)
-
-    if is_deleting_destructor(dtor):
-        set_generated_func_name(dtor_thunk, f'??_G{class_name}@@QEAAXXZ')
-        
-        if base_dtor_thunk := guess_vbase_destructor_thunk_from_deleting_destructor(dtor):
-            set_generated_func_name(base_dtor_thunk, f'??_D{class_name}@@QEAAXXZ')
-    else:
-        set_generated_func_name(dtor_thunk, f'??_D{class_name}@@QEAAXXZ')
+    set_destructor_func_name(ensure_functions(dtor_thunk_ea), class_name)
 
 def find_ctors_and_dtors():
     for name, ea in nlist_names():

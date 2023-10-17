@@ -556,17 +556,9 @@ def get_ida_type(type):
     if decl.kind == CursorKind.NO_DECL_FOUND:
         found = get_stock_or_build_ida_type(type)
     else:
+        # print(f'Type has declaration. kind: {decl.kind}, hash: {decl.hash}, displayname: {decl.displayname}, usr: {decl.get_usr()}, typename: {get_decl_name(decl)}, file: {decl.location.file}')
         found = visited.get(decl.hash) or define_ida_type(decl)
 
-    # print(f'Type has declaration. kind: {decl.kind}, hash: {cursor_hash}, displayname: {decl.displayname}, usr: {decl.get_usr()}, typename: {get_decl_name(decl)}')
-    # for member in decl.get_children():
-    #     print('M:', member.kind, member.spelling)
-
-    # if found:
-    #     # print(f'cache hit: {found} (hash was {decl.hash})')
-    # else:
-    #     # print(f'cache miss (hash was {decl.hash})')
-    
     if type.is_const_qualified():
         found = found.copy()
         found.set_const()
@@ -1017,7 +1009,7 @@ def parse_file(path, args=[]):
     else:
         known_mangled_names.clear()
         process_cursor(tx.cursor)
-        garbage_collect()
+        # garbage_collect()
 
 def process_cursor(cursor):
     for item in cursor.get_children():

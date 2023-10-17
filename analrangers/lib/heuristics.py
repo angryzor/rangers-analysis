@@ -161,7 +161,7 @@ def guess_subclass_constructors_from_constructor(f):
 def estimate_class_name_from_vtable_name(name):
     m = re.match(r'^\?\?_7(.+)@@6B@$', name)
     if m:
-        return m.group(1)
+        return m.group(1).split('@')
 
 def estimate_class_name_from_vtable(ea):
     name = get_name(ea)
@@ -228,7 +228,7 @@ def is_rtti_identified_vtable(ea):
     return get_qword(col_ea) != BADADDR and get_name(col_ea) == '??_R4' + existing_name[4:]
 
 def generated_class_name(name, category, prefix = 'heur'):
-    return f'{name}@{category}@{prefix}'
+    return [name, category, prefix]
 
 def get_best_class_name(ctor_func, short_name_ea, category):
     class_name = ctor_func and estimate_class_name_from_constructor(ctor_func)

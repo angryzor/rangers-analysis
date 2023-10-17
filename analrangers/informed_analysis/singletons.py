@@ -1,14 +1,16 @@
 from ida_bytes import get_qword
 from ida_ua import o_reg
-from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo, class_name_to_backrefs
+from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo
 from analrangers.lib.heuristics import require_constructor_thunk_from_instantiator, require_class_name_from_constructor
 from analrangers.lib.funcs import require_function, ensure_functions, find_implementation, require_thunk
 from analrangers.lib.xrefs import get_code_drefs_to
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_mem_assignment_through_single_reg, read_insn
-from analrangers.lib.naming import set_generated_func_name, set_generated_name
+from analrangers.lib.naming import set_generated_func_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_initializer_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
 from .report import handle_anal_exceptions
 
 init_node_tif = require_type('hh::fnd::SingletonInitNode')
+
+initnode_class_name = ['SingletonInitNode', 'fnd', 'hh']
 
 def handle_initializer(static_initializer_eas, singleton_list_ea, initializer_ea):
     initializer = require_function(initializer_ea)
@@ -33,17 +35,19 @@ def handle_initializer(static_initializer_eas, singleton_list_ea, initializer_ea
     destroyer_thunk = ensure_functions(destroyer_thunk_ea)
 
     class_name = require_class_name_from_constructor(constructor)
-    backrefs = class_name_to_backrefs(class_name)
+
+    init_node_var = StaticObjectVar('singletonInitNode', initnode_class_name, StaticObjectVarType.VAR, True)
+    instance_var = StaticObjectVar('instance', class_name, StaticObjectVarType.PTR, False)
 
     force_apply_tinfo(singleton_node_ea, init_node_tif)
-    set_generated_name(singleton_node_ea, f'?singletonInitNode@{class_name}@@0PEAVSingletonInitNode@fnd@hh@@@EA')
+    set_static_var_name(singleton_node_ea, class_name, init_node_var)
 
-    set_generated_name(instance_ea, f'?instance@{class_name}@@0PEAV{backrefs}@EA')
+    set_static_var_name(instance_ea, class_name, instance_var)
 
-    set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{backrefs}@PEAVIAllocator@fnd@csl@@@Z')
-    set_generated_func_name(destroyer_thunk, f'?Destroy@{class_name}@@CAXPEAV{backrefs}@@Z')
-    set_generated_func_name(constructor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
-    set_generated_func_name(initializer, f'??__EsingletonInitNode@{class_name}@@0VSingletonInitNode@fnd@hh@@B')
+    set_private_instantiator_func_name(instantiator_thunk, class_name)
+    set_generated_func_name(destroyer_thunk, create_name('?{0}@CAXPEAV{1}@Z', ['Destroy', *class_name], class_name))
+    set_simple_constructor_func_name(constructor_thunk, class_name)
+    set_static_initializer_func_name(initializer, class_name, init_node_var)
 
 def find_singletons(static_initializer_eas):
     singleton_list_ea = require_name_ea('singletonList')

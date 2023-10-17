@@ -4,18 +4,22 @@ from ida_funcs import get_fchunk
 from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
 from analrangers.lib.funcs import ensure_functions, func_parents, find_implementation, require_function, require_thunk
 from analrangers.lib.heuristics import get_best_class_name, get_getter_xref, require_constructor_thunk_from_instantiator
-from analrangers.lib.util import get_cstr, class_name_to_backrefs
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
+from analrangers.lib.util import get_cstr, force_apply_tinfo, require_type
+from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
 from analrangers.lib.segments import text_seg
 from .report import handle_anal_exceptions
 
+service_class_tif = require_type('hh::game::GameServiceClass')
+
 tls_seg = get_segm_by_name(text_seg)
+
+class_class_name = ['GameServiceClass', 'game', 'hh']
 
 def handle_func_parent(parent_ea):
     parent = require_function(parent_ea)
     parent_thunk = require_thunk(parent)
 
-    service_ea = read_source_op_addr_from_reg_assignment(parent_ea, 1)
+    class_ea = read_source_op_addr_from_reg_assignment(parent_ea, 1)
     service_name_ea = read_source_op_addr_from_reg_assignment(parent_ea, 2)
     initializer_ea = read_source_op_addr_from_reg_assignment(parent_ea, 8)
 
@@ -28,15 +32,19 @@ def handle_func_parent(parent_ea):
 
     class_name, using_fallback_name = get_best_class_name(constructor, service_name_ea, 'services')
 
-    set_generated_name(service_ea, f'?staticClass@{class_name}@@0PEAVGameServiceClass@game@hh@@EA')
-    set_generated_func_name(initializer_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
-    set_generated_func_name(parent_thunk, f'??__EstaticClass@{class_name}@@0VGameServiceClass@game@hh@@B')
+    force_apply_tinfo(class_ea, service_class_tif)
 
-    getter_ea = get_getter_xref(service_ea)
+    class_var = StaticObjectVar('gameServiceClass', class_class_name, StaticObjectVarType.VAR, True)
+
+    set_static_var_name(class_ea, class_name, class_var)
+    set_private_instantiator_func_name(initializer_thunk, class_name)
+    set_static_initializer_func_name(parent_thunk, class_name, class_var)
+
+    getter_ea = get_getter_xref(class_ea)
     if getter_ea != None:
-        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@SAPEAVGameServiceClass@game@hh@@XZ')
+        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass')
     else:
-        print(f'warn: no GetClass function found for service class at {service_ea:x}')
+        print(f'warn: no GetClass function found for service class at {class_ea:x}')
 
     if using_fallback_name:
         set_generated_vtable_name_through_ctor(constructor, class_name)

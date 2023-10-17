@@ -20,9 +20,6 @@ def force_apply_tinfo_array(ea, tif, count, flags = TINFO_DEFINITE):
     
     force_apply_tinfo(ea, arr_tif, flags)
 
-def class_name_to_backrefs(class_name):
-    return "".join([str(i) for i in range(1, 1 + len(class_name.split("@")))])
-
 def binsearch_matches(start_ea, end_ea, bts, mask = None, align = None):
     cur_ea = start_ea
     while cur_ea < end_ea:

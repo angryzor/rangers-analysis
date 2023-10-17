@@ -1,15 +1,17 @@
 from ida_segment import getseg, get_segm_name
 from ida_bytes import get_qword, is_strlit, get_flags
 from ida_typeinf import idc_guess_type
-from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo, class_name_to_backrefs
+from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo
 from analrangers.lib.heuristics import get_best_class_name, discover_class_hierarchy, get_getter_xref
 from analrangers.lib.funcs import require_function, ensure_functions
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
+from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name
 from analrangers.lib.xrefs import get_drefs_to
 from analrangers.lib.segments import data_seg
 from .report import handle_anal_exceptions
 
 class_tif = require_type('hh::game::GOComponentClass')
+
+class_class_name = ['GOComponentClass', 'game', 'hh']
 
 def find_goc_class(instantiator_thunk):
     goc_class_eas = []
@@ -45,12 +47,12 @@ def handle_goc_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
 
     class_name, using_fallback_name = get_best_class_name(ctor_func, class_ea and get_qword(class_ea), 'gocs')
 
-    print(f'info: handling GOC at {ctor_func.start_ea:x}: {class_name}')
+    print(f'info: handling GOC at {ctor_func.start_ea:x}: {friendly_class_name(class_name)}')
 
     if instantiator_thunk != None:
-        set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
+        set_private_instantiator_func_name(instantiator_thunk, class_name)
     if ctor_func != instantiator_func:
-        set_generated_func_name(ctor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_simple_constructor_func_name(ctor_thunk, class_name)
 
     if class_ea == None:
         print(f'warn: Could not find a reliable hh::game::GOComponentClass xref for constructor {ctor_thunk.start_ea:x} (instantiator thunk was {instantiator_thunk.start_ea if instantiator_thunk else 0:x}). Constructor name has been deduced through vtable.')
@@ -58,12 +60,14 @@ def handle_goc_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
     
     force_apply_tinfo(class_ea, class_tif)
 
-    set_generated_name(get_qword(class_ea + 8), f'?classId@{class_name}@@0PEBXEB')
-    set_generated_name(class_ea, f'?staticClass@{class_name}@@0PEAVGOComponentClass@game@hh@@EA')
+    class_var = StaticObjectVar('componentClass', class_class_name, StaticObjectVarType.VAR, True)
+
+    set_generated_name(get_qword(class_ea + 8), create_name('?{0}@0PEBXEB', ['classId', *class_name]))
+    set_static_var_name(class_ea, class_name, class_var)
 
     getter_ea = get_getter_xref(class_ea)
     if getter_ea != None:
-        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@SAPEAVGOComponentClass@game@hh@@XZ')
+        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass')
     else:
         print(f'warn: no GetClass function found for GOComponent class at {class_ea:x}')
 

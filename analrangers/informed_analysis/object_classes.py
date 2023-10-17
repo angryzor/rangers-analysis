@@ -3,8 +3,8 @@ from ida_typeinf import tinfo_t, idc_guess_type
 from ida_segment import getseg, get_segm_name
 from analrangers.lib.funcs import ensure_functions, find_implementation, require_function
 from analrangers.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator, discover_class_hierarchy, get_getter_xref
-from analrangers.lib.util import get_cstr, class_name_to_backrefs, require_type, force_apply_tinfo, force_apply_tinfo_array, require_name_ea
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_func_name, set_generated_name
+from analrangers.lib.util import get_cstr, require_type, force_apply_tinfo, force_apply_tinfo_array, require_name_ea
+from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVarType, StaticObjectVar, friendly_class_name
 from analrangers.lib.ua_data_extraction import read_source_op_addr
 from analrangers.lib.iterators import null_terminated_ptr_array_iterator
 from analrangers.lib.xrefs import get_drefs_to
@@ -13,6 +13,9 @@ from .report import handle_anal_exceptions
 
 obj_class_tif = require_type('hh::game::GameObjectClass')
 rfl_member_value_tif = require_type('hh::fnd::RflClassMember::Value')
+
+class_class_name = ['GameObjectClass', 'game', 'hh']
+rflclass_member_value_class_name = ['Value', 'RflClassMember', 'fnd', 'hh']
 
 # High confidence analysis for objects in the registry
 def handle_obj_class(obj_class_ea):
@@ -35,17 +38,20 @@ def handle_obj_class(obj_class_ea):
 
     if member_value_count != 0 and member_value_array_ea != 0:
         force_apply_tinfo_array(member_value_array_ea, rfl_member_value_tif, member_value_count)
-    
-    set_generated_name(member_value_array_ea, f'?staticClassMembers@{class_name}@@0PEAVValue@RflClassMember@fnd@hh@@EA')
 
-    set_generated_name(obj_class_ea, f'?staticClass@{class_name}@@0PEAVGameObjectClass@game@hh@@EA')
-    set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
+    class_members_var = StaticObjectVar('gameObjectClassMembers', rflclass_member_value_class_name, StaticObjectVarType.ARRAY, True)
+    class_var = StaticObjectVar('gameObjectClass', class_class_name, StaticObjectVarType.VAR, True)
+
+    set_static_var_name(member_value_array_ea, class_name, class_members_var)
+    set_static_var_name(obj_class_ea, class_name, class_var)
+
+    set_private_instantiator_func_name(instantiator_thunk, class_name)
     if instantiator != constructor_thunk:
-        set_generated_func_name(constructor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_simple_constructor_func_name(constructor_thunk, class_name)
 
     getter_ea = get_getter_xref(obj_class_ea)
     if getter_ea != None:
-        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@CAPEAVGameObjectClass@game@hh@@XZ')
+        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass')
     else:
         print(f'warn: no GetClass function found for GameObject class at {obj_class_ea:x}')
 
@@ -87,12 +93,12 @@ def handle_obj_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
 
     class_name, using_fallback_name = get_best_class_name(ctor_func, class_ea and get_qword(class_ea), 'gameobjects')
 
-    print(f'info: handling GameObject at {ctor_func.start_ea:x}: {class_name}')
+    print(f'info: handling GameObject at {ctor_func.start_ea:x}: {friendly_class_name(class_name)}')
 
     if instantiator_thunk != None:
-        set_generated_func_name(instantiator_thunk, f'?Instantiate@{class_name}@@CAPEAV{class_name_to_backrefs(class_name)}@PEAVIAllocator@fnd@csl@@@Z')
+        set_private_instantiator_func_name(instantiator_thunk, class_name)
     if ctor_func != instantiator_func:
-        set_generated_func_name(ctor_thunk, f'??0{class_name}@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
+        set_simple_constructor_func_name(ctor_thunk, class_name)
 
     if class_ea == None:
         print(f'warn: Could not find a reliable hh::game::GameObjectClass xref for constructor {ctor_thunk.start_ea:x} (instantiator thunk was {instantiator_thunk.start_ea if instantiator_thunk else 0:x}). Constructor name has been deduced through vtable.')
@@ -100,11 +106,21 @@ def handle_obj_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
     
     force_apply_tinfo(class_ea, obj_class_tif)
 
-    set_generated_name(class_ea, f'?staticClass@{class_name}@@0PEAVGameObjectClass@game@hh@@EA')
+    member_value_count = get_dword(class_ea + 0x40)
+    member_value_array_ea = get_qword(class_ea + 0x48)
+
+    if member_value_count != 0 and member_value_array_ea != 0:
+        force_apply_tinfo_array(member_value_array_ea, rfl_member_value_tif, member_value_count)
+
+    class_members_var = StaticObjectVar('gameObjectClassMembers', rflclass_member_value_class_name, StaticObjectVarType.ARRAY, True)
+    class_var = StaticObjectVar('gameObjectClass', class_class_name, StaticObjectVarType.VAR, True)
+
+    set_static_var_name(member_value_array_ea, class_name, class_members_var)
+    set_static_var_name(class_ea, class_name, class_var)
 
     getter_ea = get_getter_xref(class_ea)
     if getter_ea != None:
-        set_generated_func_name(ensure_functions(getter_ea), f'?GetClass@{class_name}@@SAPEAVGameObjectClass@game@hh@@XZ')
+        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass')
     else:
         print(f'warn: no GetClass function found for GameObject class at {class_ea:x}')
 
