@@ -1,23 +1,30 @@
-from copyreg import constructor
+import sys
+
+analmodules = [mod for mod in sys.modules if mod.startswith('analrangers')]
+for mod in analmodules:
+    del sys.modules[mod]
+
 import re
-from functools import reduce
-from clang.cindex import Index, CursorKind, TypeKind, BaseEnumeration, conf, TranslationUnit, _CXString, Cursor, register_function
-try:
-    import idaapi
-    import ida_name
-    import ida_ua
-    import ida_funcs
-    import ida_kernwin
-    from ida_bytes import *
-    from ida_typeinf import *
-    from idc import *
-except:
-    pass
-from ctypes import Structure, POINTER, c_uint, byref
 import os
+from clang.cindex import Index, CursorKind, TypeKind, BaseEnumeration, conf, TranslationUnit, _CXString, Cursor, register_function
+import idaapi
+import ida_name
+import ida_ua
+import ida_funcs
+import ida_kernwin
+import ida_segment
+import ida_hexrays
+import ida_nalt
+from ida_bytes import *
+from ida_typeinf import *
+from idc import *
+from analrangers.lib.naming import nlist_names
+from ctypes import POINTER, c_uint
 
 if not conf.loaded:
     conf.set_library_file(os.path.join(os.path.dirname(__file__), 'libclang.dll'))
+
+API_LOCATION = os.environ['SONIC_FRONTIERS_SDK']
 
 known_mangled_names = []
 
@@ -153,7 +160,7 @@ def parse_usr(usr):
     def parse_non_builtin_type():
         nonlocal usr
 
-        if parse_re(r'@N@|@S@|@E@'):
+        if parse_re(r'@N@|@S@|@E@|@U@'):
             name = expect(parse_ident())
             args = parse_template_argument_list()
             qualifier = f'{name}{args if args else ""}'
@@ -287,9 +294,9 @@ simple_types = {
     TypeKind.CHAR_U: BTF_UCHAR,
     TypeKind.SCHAR: BTF_CHAR,
     TypeKind.UCHAR: BTF_UCHAR,
-    TypeKind.WCHAR: BT_INT16 | BTMT_CHAR,
-    TypeKind.CHAR16: BT_INT16 | BTMT_CHAR,
-    TypeKind.CHAR32: BT_INT32 | BTMT_CHAR,
+    TypeKind.WCHAR: BT_INT16,
+    TypeKind.CHAR16: BT_INT16,
+    TypeKind.CHAR32: BT_INT32,
     TypeKind.SHORT: BTF_INT16,
     TypeKind.USHORT: BTF_UINT16,
     TypeKind.INT: BTF_INT32,
@@ -361,17 +368,18 @@ class KnownMangledName:
 excluded_type_application_patterns = r'@rfl@app@|\?\$HashMap@|\?\$Array@|\?\$FixedArray@|\?\$MoveArray@|\?\$Handle@|\?\$Delegate@|\?\$StringMap@|\?\$Bitset@'
 
 def attempt_applying_type_to_name(mangled_name, type):
+    known_mangled_names.append(KnownMangledName(mangled_name, type))
+
     address = get_name_ea_simple(mangled_name)
     if address != idaapi.BADADDR:
-        print(f'setting {address:x} with name {mangled_name} to {type}')
+        #print(f'setting {address:x} with name {mangled_name} to {type}')
         idaapi.apply_tinfo(address, type, idaapi.TINFO_DELAYFUNC | idaapi.TINFO_DEFINITE)
 
         thunk_name = 'j_' + mangled_name
         if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
             attempt_applying_type_to_name(thunk_name, type)
     else: #if not re.search(excluded_type_application_patterns, mangled_name):
-        known_mangled_names.append(KnownMangledName(mangled_name, type))
-        print(f'Unmatched name: {mangled_name}, cannot apply type.')
+        pass #print(f'Unmatched name: {mangled_name}, cannot apply type.')
 
 def set_func_ea_name(ea, name):
     if ida_ua.print_insn_mnem(ea) == 'retn':
@@ -413,10 +421,11 @@ vtable_infos = dict()
 saved = set()
 
 class VTableInfo:
-    def __init__(self, base_path, members, offset):
+    def __init__(self, base_path, members, offset, unshifted_class_tif):
         self.base_path = base_path
         self.members = [*members]
         self.offset = offset
+        self.unshifted_class_tif = unshifted_class_tif
 
 # class ImportedType:
 #     def __init__(self, tif):
@@ -435,6 +444,10 @@ def save_tinfo(tif, decl_name):
     gc_marker.key = 'imported'
     gc_marker.value = b''
     tif.set_attr(gc_marker)
+
+    # oldtif = tinfo_t()
+    # if oldtif.get_named_type(idati, decl_name):
+    #     print('for ', tif, ' comparison is ', tif.equals_to(oldtif))
     
     tif.set_named_type(idati, decl_name, idaapi.NTF_REPLACE)
     saved.add(decl_name)
@@ -464,7 +477,7 @@ def TypeHandler(kind):
         return f
     return decorator
 
-def resolve_function(type, flags=0, class_tif=None, decl=None):
+def resolve_function(type, flags=0, class_tif=None, decl=None, this_shift = 0, this_parent_tif = None):
     decl = decl or type.get_declaration()
     tif = idaapi.tinfo_t()
     data = idaapi.func_type_data_t()
@@ -483,7 +496,16 @@ def resolve_function(type, flags=0, class_tif=None, decl=None):
 
     if class_tif:
         thistype = idaapi.tinfo_t()
-        thistype.create_ptr(class_tif)
+        
+        this_type_ptd = ptr_type_data_t()
+        this_type_ptd.obj_type = class_tif
+
+        if this_shift != 0:
+            this_type_ptd.parent = this_parent_tif
+            this_type_ptd.delta = this_shift
+            this_type_ptd.taptr_bits = TAPTR_SHIFTED
+
+        thistype.create_ptr(this_type_ptd)
         funcarg = idaapi.funcarg_t()
         funcarg.name = 'this'
         funcarg.type = thistype
@@ -714,7 +736,15 @@ def is_stock_function(ea):
 class VFunc:
     def __init__(self, class_tif):
         self.class_tif = class_tif
+        self.parent_tif = None
+        self.offset = 0
     
+    def set_override(self, base_tif, offset):
+        if offset != 0:
+            self.parent_tif = self.class_tif
+            self.class_tif = base_tif
+            self.offset = offset
+
     def overrides(self, that):
         return (self.is_dtor() and that.is_dtor()) or (self.get_name() == that.get_name() and [t.get_canonical() for t in self.get_arguments()] == [t.get_canonical() for t in that.get_arguments()])
 
@@ -736,7 +766,7 @@ class DeclVFunc(VFunc):
         return self.decl.type.argument_types()
     
     def get_tif(self):
-        return resolve_function(self.decl.type, 0, self.class_tif, self.decl)
+        return resolve_function(self.decl.type, 0, self.class_tif, self.decl, self.offset, self.parent_tif)
     
 class DefaultDtorVFunc(VFunc):
     def __init__(self, class_decl, class_tif):
@@ -786,9 +816,35 @@ class DefaultDtorVFunc(VFunc):
 
         return tif
 
+def handle_union(type):
+    decl = type.get_declaration()
+    decl_name = get_decl_name(decl)
+    forward_tif = _create_forward_declaration(decl)
+
+    udt = idaapi.udt_type_data_t()
+    udt.is_union = True
+    udt.taudt_bits |= TAUDT_CPPOBJ
+    
+    for member in type.get_fields():
+        member_udt = idaapi.udt_member_t()
+        member_udt.name = member.spelling
+        member_udt.offset = member.get_field_offsetof()
+        member_udt.type = get_ida_type(member.type)
+        udt.push_back(member_udt)
+    
+    tif = idaapi.tinfo_t()
+    tif.create_udt(udt, BTF_UNION)
+    save_tinfo(tif, decl_name)
+
+    return tif
+
 @TypeHandler(TypeKind.RECORD)
 def handle_record(type):
     decl = type.get_declaration()
+
+    if decl.kind == CursorKind.UNION_DECL:
+        return handle_union(type)
+
     decl_name = get_decl_name(decl)
     forward_tif = _create_forward_declaration(decl)
 
@@ -810,11 +866,12 @@ def handle_record(type):
 
         if len(vtbl_infos) == 0:
             is_root = True
-            vtbl_infos.append(VTableInfo([], [], 0))
+            vtbl_infos.append(VTableInfo([], [], 0, forward_tif))
 
         for vtbl_info in vtbl_infos:
             for i, vtbl_member in enumerate(vtbl_info.members):
                 if f.overrides(vtbl_member):
+                    f.set_override(vtbl_info.unshifted_class_tif, vtbl_info.offset)
                     vtbl_info.members[i] = f
                     return
             
@@ -839,7 +896,8 @@ def handle_record(type):
                     delayed_base_udts.append(member_udt)
                 else:
                     for vtbl_info in base_vtbl_infos:
-                        vtbl_infos.append(VTableInfo(vtbl_info.base_path if offset == 0 else [member_decl, *vtbl_info.base_path], vtbl_info.members, vtbl_info.offset + offset))
+                        total_offset = vtbl_info.offset + offset
+                        vtbl_infos.append(VTableInfo(vtbl_info.base_path if offset == 0 else [member_decl, *vtbl_info.base_path], vtbl_info.members, total_offset, forward_tif if total_offset == 0 else vtbl_info.unshifted_class_tif))
                     
                     offset += member_type.get_size()
 
@@ -892,7 +950,7 @@ def handle_record(type):
             attempt_applying_type_to_name(mangled_vtable_name, vtbl_tif)
 
             vtbl_ea = ida_name.get_name_ea(BADADDR, mangled_vtable_name)
-            print(f'trying to set vtable {mangled_vtable_name} at {vtbl_ea or 0:x}')
+            # print(f'trying to set vtable {mangled_vtable_name} at {vtbl_ea or 0:x}')
             if vtbl_ea != BADADDR:
                 for i, member in enumerate(vtbl_info.members):
                     vfunc_ea = ida_bytes.get_qword(vtbl_ea + 8 * i)
@@ -1021,58 +1079,145 @@ def process_cursor(cursor):
             continue
 
 def run_sync():
-    parse_file('C:\\Users\\Ruben Tytgat\\Documents\\rangers-api\\rangers-api\\rangers-api.cpp', ['--std=c++17'])
+    parse_file(os.path.join(API_LOCATION, 'type-export-entry.cpp'), ['--std=c++17'])
 
 class ChooseSDKName(ida_kernwin.Choose):
     def __init__(self, names):
         self.names = names
-        super().__init__('Known names in SDK', [['Name', ida_kernwin.Choose.CHCOL_PLAIN]], ida_kernwin.Choose.CH_MODAL)
+        super().__init__('Known names in SDK', [
+            ['Short Name', 50 | ida_kernwin.Choose.CHCOL_PLAIN],
+            ['Full Name', 100 | ida_kernwin.Choose.CHCOL_PLAIN],
+        ], ida_kernwin.Choose.CH_MODAL)# | ida_kernwin.Choose.CH_ATTRS)
 
     def OnGetSize(self):
         return len(self.names)
 
     def OnGetLine(self, n):
         name = self.names[n].name
-        demangled_name = ida_name.demangle_name(name, 0)
-        return [demangled_name or name]
-    
-class ApplySDKNameActionHandler(ida_kernwin.action_handler_t):
+
+        short_demangled_name = ida_name.demangle_name(name, ida_name.MNG_SHORT_FORM)
+        full_name = ida_name.demangle_name(name, 0) or name
+
+        if not short_demangled_name or not full_name:
+            return [name, name]
+        
+        # parenidx = short_demangled_name.find('(')
+        # before_paren = short_demangled_name if parenidx == -1 else short_demangled_name[:parenidx]
+
+        # qualsepidx = before_paren.rfind('::')
+        # class_name = '' if qualsepidx == -1 else short_demangled_name[:qualsepidx]
+        # func_name = short_demangled_name if qualsepidx == -1 else short_demangled_name[qualsepidx+2:]
+
+        return [short_demangled_name, full_name]
+
+    # def OnGetLineAttr(self, n):
+    #     name = self.names[n].name
+    #     return 0x00ff0000, ida_kernwin.CHITEM_GRAY
+
+def apply_sdk_name(ea):
+    names = [*known_mangled_names] # intentional copy to remain consistent even if the known mangled names somehow change
+    choice = ida_kernwin.choose_choose(ChooseSDKName(names))
+
+    if choice != -1:
+        known = names[choice]
+
+        ida_name.set_name(ea, known.name, 0)
+        attempt_applying_type_to_name(known.name, known.tif)
+
+def generate_thunks():
+    image_base = ida_nalt.get_imagebase()
+
+    f = open(os.path.join(API_LOCATION, 'src', 'thunks.asm'), 'w')
+    f.write("""
+.data
+    moduleOffset dq 0
+
+.code
+
+PUBLIC RangersSDK_SetBaseAddress
+RangersSDK_SetBaseAddress:
+    mov moduleOffset, rcx
+    ret
+
+PUBLIC RangersSDK_GetAddress
+RangersSDK_GetAddress:
+    mov eax, dword ptr [rcx+9]
+    add rax, moduleOffset
+    ret
+
+""")
+    for name, ea in nlist_names():
+        demangled = ida_name.demangle_name(name, 0)
+        if len(name) > 200 or name.startswith('j_') or name.startswith('??_7') or name.startswith('??_R') or not demangled:
+            continue
+        # func = ida_funcs.get_func(ea)
+        # if not func or func.flags & ida_funcs.FUNC_THUNK or func.start_ea != ea:
+        #     continue
+
+        f.write(f"""
+PUBLIC {name}
+{name}:
+    mov rax, moduleOffset
+    add rax, 0{ea - image_base:x}h
+    jmp rax
+""")
+
+    f.write('end\n')
+    f.close()
+
+class CPPParserActionHandler(ida_kernwin.action_handler_t):
     def __init__(self, cpp_parser):
         super().__init__()
         self.cpp_parser = cpp_parser
 
+class ApplySDKNameActionHandler(CPPParserActionHandler):
     def activate(self, ctx):
-        names = [*known_mangled_names] # intentional copy to remain consistent even if the known mangled names somehow change
-        choice = ida_kernwin.choose_choose(ChooseSDKName(names))
+        def get_target_ea():
+            print(ctx.cur_value)
+            if ida_segment.getseg(ctx.cur_value):
+                return ctx.cur_value
+            elif ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE and not ctx.cur_value == BADADDR:
+                vdui = ida_hexrays.get_widget_vdui(ctx.widget)
+                treeitem = vdui.cfunc.treeitems.at(ctx.cur_value)
+                if treeitem.is_expr() and treeitem.cexpr.obj_ea != BADADDR:
+                    return treeitem.cexpr.obj_ea
 
-        if choice != -1:
-            known = names[choice]
+            print('invalid target')
 
-            ida_name.set_name(ctx.cur_ea, known.name, 0)
-            attempt_applying_type_to_name(known.name, known.tif)
+        target = get_target_ea()
+
+        if target:
+            apply_sdk_name(target)
 
         ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
         return 0
 
-class SyncHandler(ida_kernwin.action_handler_t):
-    def __init__(self, cpp_parser):
-        super().__init__()
-        self.cpp_parser = cpp_parser
-
+class SyncHandler(CPPParserActionHandler):
     def activate(self, ctx):
         run_sync()
         ida_kernwin.update_action_state('cppparser:sync', ida_kernwin.AST_ENABLE_ALWAYS)
         return 0
 
+class GenerateThunksHandler(CPPParserActionHandler):
+    def activate(self, ctx):
+        generate_thunks()
+        ida_kernwin.update_action_state('cppparser:generate-thunks', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
 class CPPParserUIHooks(ida_kernwin.UI_Hooks):
     def populating_widget_popup(self, widget, popup_handle, ctx):
-        ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:apply-sdk-name')
+        if ctx.widget_type in (ida_kernwin.BWN_DISASM, ida_kernwin.BWN_PSEUDOCODE):
+            ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:apply-sdk-name')
 
 class CPPParser:
     def __init__(self):
         sync_action = ida_kernwin.action_desc_t('cppparser:sync', 'Load SDK types', SyncHandler(self))
         ida_kernwin.register_action(sync_action)
         ida_kernwin.update_action_state('cppparser:sync', ida_kernwin.AST_ENABLE_ALWAYS)
+
+        generate_thunks_action = ida_kernwin.action_desc_t('cppparser:generate-thunks', 'Generate thunks', GenerateThunksHandler(self))
+        ida_kernwin.register_action(generate_thunks_action)
+        ida_kernwin.update_action_state('cppparser:generate-thunks', ida_kernwin.AST_ENABLE_ALWAYS)
 
         apply_sdk_name_action = ida_kernwin.action_desc_t('cppparser:apply-sdk-name', 'Apply SDK name', ApplySDKNameActionHandler(self))
         ida_kernwin.register_action(apply_sdk_name_action)
@@ -1081,6 +1226,7 @@ class CPPParser:
         ida_kernwin.create_toolbar('cppparser', 'CPP Parser')
 
         ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:sync')
+        ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:generate-thunks')
 
         self.ui_hooks = CPPParserUIHooks()
         self.ui_hooks.hook()
@@ -1091,11 +1237,13 @@ class CPPParser:
         self.ui_hooks.unhook()
         # ida_kernwin.del_hotkey(apply_sdk_name_hk)
 
+        ida_kernwin.detach_action_from_toolbar('cppparser', 'cppparser:generate-thunks')
         ida_kernwin.detach_action_from_toolbar('cppparser', 'cppparser:sync')
 
         ida_kernwin.delete_toolbar('cppparser')
 
         ida_kernwin.unregister_action('cppparser:apply-sdk-name')
+        ida_kernwin.unregister_action('cppparser:generate-thunks')
         ida_kernwin.unregister_action('cppparser:sync')
 
 try:

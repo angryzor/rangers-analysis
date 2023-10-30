@@ -189,8 +189,8 @@ def emit_struct(structs, rfl_class_ea):
         text += m
     
     text +=  '\n'
-    text +=  '        static const hh::fnd::RflTypeInfo staticTypeInfo;\n'
-    text +=  '        static const hh::fnd::RflClass staticClass;\n'
+    text +=  '        static const hh::fnd::RflTypeInfo typeInfo;\n'
+    text +=  '        static const hh::fnd::RflClass rflClass;\n'
     text +=  '    private:\n'
     text += f'        static void Construct({name}* pInstance, csl::fnd::IAllocator* pAllocator);\n'
     text += f'        static void Finish({name}* pInstance);\n'

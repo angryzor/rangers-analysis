@@ -18,10 +18,11 @@ SetBaseAddress:
 	mov moduleOffset, rcx
 	ret
 
-;PUBLIC GetFunctionAddress
-;GetFunctionAddress:
-;	mov rax, moduleOffset
-;    jmp rcx+
+PUBLIC GetFunctionAddress
+GetFunctionAddress:
+	mov rax, moduleOffset
+    add rax, [rcx+9]
+    ret
 """)
 for name, ea in nlist_names():
     flags = get_full_flags(ea)

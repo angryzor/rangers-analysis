@@ -12,9 +12,7 @@ def handle_initializer(class_name, vtable_ea):
     dtor_thunk_ea = get_qword(vtable_ea)
 
     constructor = guess_constructor_from_vtable(vtable_ea)
-    print('found a ctor, now trying to get instantiators')
     instantiator_thunk, instantiator, constructor_thunk = find_instantiator_from_constructor(constructor)
-    print('found instantiators, now setting names')
 
     if instantiator != constructor:
         set_simple_constructor_func_name(constructor_thunk, class_name)

@@ -29,19 +29,21 @@ class StaticObjectVarType(Enum):
     CONST_PTR = 3
 
 class StaticObjectVar:
-    def __init__(self, name, class_name, type, const = False):
+    def __init__(self, name, class_name, type, const = False, public = False):
         self.name = name
         self.class_name = class_name
         self.type = type
         self.const = const
+        self.public = public
 
     def get_mangling_format(self):
         qual = 'B' if self.const else 'A'
+        acc = '2' if self.public else '0'
         match self.type:
-            case StaticObjectVarType.VAR: return '{0}@0V{1}@' + qual
-            case StaticObjectVarType.ARRAY: return '{0}@0Q' + qual + 'V{1}@' + qual
-            case StaticObjectVarType.PTR: return '{0}@0PE' + qual + 'V{1}@E' + qual
-            case StaticObjectVarType.CONST_PTR: return '{0}@0QE' + qual + 'V{1}@E' + qual
+            case StaticObjectVarType.VAR: return '{0}@' + acc + 'V{1}@' + qual
+            case StaticObjectVarType.ARRAY: return '{0}@' + acc + 'Q' + qual + 'V{1}@' + qual
+            case StaticObjectVarType.PTR: return '{0}@' + acc + 'PE' + qual + 'V{1}@E' + qual
+            case StaticObjectVarType.CONST_PTR: return '{0}@' + acc + 'QE' + qual + 'V{1}@E' + qual
             case _: raise Exception('unknown var type')
 
 def nlist_names():

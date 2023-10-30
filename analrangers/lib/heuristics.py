@@ -2,10 +2,11 @@ import re
 from ida_name import get_name
 from ida_segment import get_segm_name, getseg
 from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem, o_near, o_imm
-from ida_bytes import get_qword, get_flags, is_code, has_user_name
+from ida_bytes import get_qword, get_flags, is_code, has_user_name, is_strlit
 from ida_idaapi import BADADDR
 from ida_funcs import get_func, get_fchunk
 from ida_idp import reg_accesses_t, ph_get_reg_accesses
+from ida_typeinf import idc_guess_type
 from .util import get_cstr
 from .ua_data_extraction import find_insn_forward, read_insn, decoded_insns_forward, track_values
 from .xrefs import get_drefs_to, get_safe_crefs_to, get_code_drefs_to
@@ -13,7 +14,7 @@ from .analysis_exceptions import AnalException
 from .require import require_wrap, NotFoundException
 from .funcs import require_function, require_thunk, ensure_functions, find_implementation, FunctionNotFoundException
 from .iterators import require_unique, find, UniqueNotFoundException
-from .segments import rdata_seg
+from .segments import rdata_seg, data_seg
 
 def guess_vtable_from_constructor(f):
     # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
@@ -261,6 +262,34 @@ def find_instantiator_from_constructor(ctor_func):
         print(f'info: No instantiator found for {ctor_func.start_ea:x}. It may be an abstract superclass.')
 
     return instantiator_thunk, instantiator_func, ctor_thunk
+
+def find_class_object(class_name, segment, xref_offset, instantiator_thunk):
+    class_eas = []
+
+    for dref in get_drefs_to(instantiator_thunk.start_ea):
+        if get_segm_name(getseg(dref)) != segment:
+            continue
+
+        if get_qword(dref) != instantiator_thunk.start_ea:
+            # We found something, but the data is not undefined and the xref is in the tail. Try to find out if this is already a ManagedResourceClass.
+            if class_name in idc_guess_type(dref):
+                class_eas.append(dref)
+            else:
+                print(f'warn: resource constructor xref {dref:x} is not a {class_name}, ignoring')
+
+            continue
+
+        class_ea = dref - xref_offset
+        class_name_ea = get_qword(class_ea)
+
+        if not is_strlit(get_flags(class_name_ea)):
+            print(f'warn: {class_ea:x} does not look like a {class_name}, ignoring')
+            continue
+
+        class_eas.append(class_ea)
+    
+    if len(class_eas) == 1:
+        return class_eas[0]
 
 # Attempts to find all classes of a class hierarchy.
 def discover_class_hierarchy(base_ctor):

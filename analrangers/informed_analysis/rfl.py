@@ -31,7 +31,7 @@ def set_rfl_type(type_info_ea):
 
     print(f'info: handling RflTypeInfo at {type_info_ea:x}: {name}')
 
-    set_static_var_name(type_info_ea, class_name, StaticObjectVar('typeInfo', rfl_type_info_class_name, StaticObjectVarType.VAR, True))
+    set_static_var_name(type_info_ea, class_name, StaticObjectVar('typeInfo', rfl_type_info_class_name, StaticObjectVarType.VAR, True, True))
 
     constructor_ea = get_qword(type_info_ea + 0x10)
     finisher_ea = get_qword(type_info_ea + 0x18)
@@ -86,7 +86,7 @@ def is_valid_xref(xref):
 
 
 def handle_rfl_class(static_initializer_eas, rfl_class_ea):
-    class_var = StaticObjectVar('rflClass', rfl_class_class_name, StaticObjectVarType.VAR, True)
+    class_var = StaticObjectVar('rflClass', rfl_class_class_name, StaticObjectVarType.VAR, True, True)
 
     try:
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
