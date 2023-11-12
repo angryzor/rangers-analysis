@@ -29,21 +29,23 @@ class StaticObjectVarType(Enum):
     CONST_PTR = 3
 
 class StaticObjectVar:
-    def __init__(self, name, class_name, type, const = False, public = False):
+    def __init__(self, name, class_name, type, const = False, public = False, struct = False):
         self.name = name
         self.class_name = class_name
         self.type = type
         self.const = const
         self.public = public
+        self.struct = struct
 
     def get_mangling_format(self):
         qual = 'B' if self.const else 'A'
         acc = '2' if self.public else '0'
+        strtyp = 'U' if self.struct else 'V'
         match self.type:
-            case StaticObjectVarType.VAR: return '{0}@' + acc + 'V{1}@' + qual
-            case StaticObjectVarType.ARRAY: return '{0}@' + acc + 'Q' + qual + 'V{1}@' + qual
-            case StaticObjectVarType.PTR: return '{0}@' + acc + 'PE' + qual + 'V{1}@E' + qual
-            case StaticObjectVarType.CONST_PTR: return '{0}@' + acc + 'QE' + qual + 'V{1}@E' + qual
+            case StaticObjectVarType.VAR: return '{0}@' + acc + strtyp + '{1}@' + qual
+            case StaticObjectVarType.ARRAY: return '{0}@' + acc + 'Q' + qual + strtyp + '{1}@' + qual
+            case StaticObjectVarType.PTR: return '{0}@' + acc + 'PE' + qual + strtyp + '{1}@E' + qual
+            case StaticObjectVarType.CONST_PTR: return '{0}@' + acc + 'QE' + qual + strtyp + '{1}@E' + qual
             case _: raise Exception('unknown var type')
 
 def nlist_names():
@@ -56,18 +58,20 @@ def set_generated_vtable_name_through_ctor(ctor_func, class_name):
     if not is_rtti_identified_vtable(vtable_ea):     # shouldn't happen, but let's just add an extra check to be sure
         set_generated_name(vtable_ea, create_name('??_7{0}@6B@', class_name))
 
-def set_generated_name(ea, name):
-    if not has_user_name(get_flags(ea)):
+def set_generated_name(ea, name, is_certain = False):
+    if is_certain:
+        set_name(ea, name)
+    elif not has_user_name(get_flags(ea)):
         set_name(ea, name, SN_AUTO)
     else:
-        print(f'warn: Not updating name at {ea:x} to {name} as the existing name is user specified.')
+        print(f'warn: Not updating name at {ea:x} to {name} as the existing name is user specified and the new name is not certain.')
 
-def set_generated_func_name(f, name):
+def set_generated_func_name(f, name, is_certain = False):
     for i, f in reversed([*enumerate(reversed([*get_thunk_targets(f)]))]):
         if is_stock_function(f):
             break
 
-        set_generated_name(f.start_ea, f"{'j_' * i}{name}")
+        set_generated_name(f.start_ea, f"{'j_' * i}{name}", is_certain)
 
 def set_private_instantiator_func_name(f, class_name, func_name = 'Instantiate'):
     set_generated_func_name(f, create_name('?{0}@CAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']))
@@ -90,7 +94,9 @@ def set_destructor_func_name(dtor_thunk, class_name):
         set_generated_func_name(dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name))
 
 def set_static_getter_func_name(f, class_name, object_var, getter_name):
-    set_generated_func_name(f, create_name('?{0}@SAPEAV{1}@XZ', [getter_name, *class_name], object_var.class_name))
+    qual = 'B' if object_var.const else 'A'
+    strtyp = 'U' if object_var.struct else 'V'
+    set_generated_func_name(f, create_name('?{0}@SAPE' + qual + strtyp + '{1}@XZ', [getter_name, *class_name], object_var.class_name))
 
 def set_static_initializer_func_name(f, class_name, object_var):
     set_generated_func_name(f, create_name(f'??__E{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name))

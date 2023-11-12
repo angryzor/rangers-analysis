@@ -6,12 +6,12 @@ from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_g
 from analrangers.lib.segments import rdata_seg
 from .report import handle_anal_exceptions
 
-class_tif = require_type('hh::fnd::ManagedResourceClass')
+class_tif = require_type('hh::fnd::ResourceTypeInfo')
 
-class_class_name = ['ManagedResourceClass', 'fnd', 'hh']
+class_class_name = ['ResourceTypeInfo', 'fnd', 'hh']
 
 def handle_resource_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func, base_ctor_func):
-    class_ea = instantiator_thunk and find_class_object('ManagedResourceClass', rdata_seg, 0x18, instantiator_thunk)
+    class_ea = instantiator_thunk and find_class_object('ResourceTypeInfo', rdata_seg, 0x18, instantiator_thunk)
 
     class_name, using_fallback_name = get_best_class_name(ctor_func, class_ea and get_qword(class_ea), 'resources')
 
@@ -23,21 +23,21 @@ def handle_resource_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor
         set_simple_constructor_func_name(ctor_thunk, class_name)
 
     if class_ea == None:
-        print(f'warn: Could not find a reliable hh::fnd::ManagedResourceClass xref for constructor {ctor_thunk.start_ea:x} (instantiator thunk was {instantiator_thunk.start_ea if instantiator_thunk else 0:x}). Constructor name has been deduced through vtable.')
+        print(f'warn: Could not find a reliable hh::fnd::ResourceTypeInfo xref for constructor {ctor_thunk.start_ea:x} (instantiator thunk was {instantiator_thunk.start_ea if instantiator_thunk else 0:x}). Constructor name has been deduced through vtable.')
         return
     
     force_apply_tinfo(class_ea, class_tif)
 
-    class_var = StaticObjectVar('resourceClass', class_class_name, StaticObjectVarType.VAR, True)
+    class_var = StaticObjectVar('typeInfo', class_class_name, StaticObjectVarType.VAR, True, False, True)
 
     set_generated_name(get_qword(class_ea + 8), create_name('?{0}@0PEBXEB', ['classId', *class_name]))
     set_static_var_name(class_ea, class_name, class_var)
 
     getter_ea = get_getter_xref(class_ea)
     if getter_ea != None:
-        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass')
+        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetTypeInfo')
     else:
-        print(f'warn: no GetClass function found for ManagedResourceClass at {class_ea:x}')
+        print(f'warn: no GetClass function found for ResourceTypeInfo at {class_ea:x}')
 
     if using_fallback_name:
         set_generated_vtable_name_through_ctor(ctor_func, class_name)

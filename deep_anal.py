@@ -20,8 +20,8 @@ clear_report()
 
 static_initializer_eas = find_static_initializers()
 
-# print('=== SERVICE ANALYSIS ===')
-# find_services()
+print('=== SERVICE ANALYSIS ===')
+find_services()
 print('=== REFLECTION ANALYSIS ===')
 find_rfl_statics(static_initializer_eas)
 # print('=== GOC ANALYSIS ===')

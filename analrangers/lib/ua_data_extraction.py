@@ -47,7 +47,11 @@ def read_source_op_addr(insn_ea):
     return find_insn_forward(lambda d: True, insn_ea).insn.Op2.addr
 
 def read_source_op_addr_from_reg_assignment(start_ea, reg, end_ea = None):
-    return find_insn_forward(lambda d: d.mnem == 'lea' and d.insn.Op1.reg == reg, start_ea, end_ea).insn.Op2.addr
+    for d in decoded_insns_forward(start_ea, end_ea):
+        if d.mnem == 'lea' and d.insn.Op1.reg == reg:
+            return d.insn.Op2.addr
+        if d.mnem == 'xor' and d.insn.Op1.reg == reg and d.insn.Op2.reg == reg:
+            return 0
 
 def read_source_op_addr_from_mem_assignment_through_single_reg(start_ea, tgt_addr, end_ea = None):
     found_insn = find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.addr == tgt_addr, start_ea, end_ea)

@@ -18,7 +18,8 @@ import ida_nalt
 from ida_bytes import *
 from ida_typeinf import *
 from idc import *
-from analrangers.lib.naming import nlist_names
+from analrangers.lib.naming import nlist_names, set_generated_func_name, set_generated_name
+from analrangers.lib.funcs import require_thunk
 from ctypes import POINTER, c_uint
 
 if not conf.loaded:
@@ -274,8 +275,6 @@ CallingConv.Unexposed = CallingConv(200)
 cursor_handlers = {}
 type_handlers = {}
 idati = idaapi.get_idati()
-# idati = idaapi.til_t()
-
 
 if idaapi.BADADDR == 2 ** 64 - 1:
     FF_POINTER = FF_QWORD
@@ -363,50 +362,18 @@ class KnownMangledName:
         self.name = name
         self.tif = tif
 
-# There's a lot of rfl classes and the large number of merged COMDAT nullsubs cause a ton of spam.
-# Also these template classes are heavily inlined so to list them all isn't very useful.
-excluded_type_application_patterns = r'@rfl@app@|\?\$HashMap@|\?\$Array@|\?\$FixedArray@|\?\$MoveArray@|\?\$Handle@|\?\$Delegate@|\?\$StringMap@|\?\$Bitset@'
-
-def attempt_applying_type_to_name(mangled_name, type):
+def discover_sdk_name(mangled_name, type):
     known_mangled_names.append(KnownMangledName(mangled_name, type))
+    apply_type_to_name(mangled_name, type)
 
+def apply_type_to_name(mangled_name, type):
     address = get_name_ea_simple(mangled_name)
     if address != idaapi.BADADDR:
-        #print(f'setting {address:x} with name {mangled_name} to {type}')
         idaapi.apply_tinfo(address, type, idaapi.TINFO_DELAYFUNC | idaapi.TINFO_DEFINITE)
 
         thunk_name = 'j_' + mangled_name
         if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
-            attempt_applying_type_to_name(thunk_name, type)
-    else: #if not re.search(excluded_type_application_patterns, mangled_name):
-        pass #print(f'Unmatched name: {mangled_name}, cannot apply type.')
-
-def set_func_ea_name(ea, name):
-    if ida_ua.print_insn_mnem(ea) == 'retn':
-        return
-
-    f = ida_funcs.get_func(ea)
-    if f == None:
-        print(f"ea {ea:x} is not a function and cannot be renamed to {name}")
-        return
-
-    if f.flags & ida_funcs.FUNC_THUNK:
-        [tgt, _] = ida_funcs.calc_thunk_func_target(f)
-
-        if tgt == BADADDR:
-            print(f"couldn't calc thunk tgt of {ea:x}")
-            return
-    
-        tgt_name = set_func_ea_name(tgt, name)
-
-        if tgt_name == None:
-            return
-        
-        name = f'j_{tgt_name}'
-
-    ida_name.set_name(ea, name)
-
-    return name
+            apply_type_to_name(thunk_name, type)
 
 callingconv_map = {
     CallingConv.C: idaapi.CM_CC_CDECL,
@@ -426,18 +393,6 @@ class VTableInfo:
         self.members = [*members]
         self.offset = offset
         self.unshifted_class_tif = unshifted_class_tif
-
-# class ImportedType:
-#     def __init__(self, tif):
-#         self.tif = tif
-
-#     def get_tif(self):
-#         return self.tif
-
-# class ImportedRecordType(ImportedType):
-#     def __init__(self, tif, vtable_infos):
-#         super(self, tif)
-#         self.vtable_infos = vtable_infos
 
 def save_tinfo(tif, decl_name):
     gc_marker = type_attr_t()
@@ -572,7 +527,7 @@ def _create_forward_declaration(decl):
 def get_ida_type(type):
     decl = type.get_declaration()
 
-    # print(f'GET: {type.kind}, spelling: {type.spelling}')
+    # print(f'GET: {type.kind}, spelling: {type.spelling}, declkind: {decl.kind}')
 
     # If we don't have a declaration, we don't have a hash and can't cache the result.
     if decl.kind == CursorKind.NO_DECL_FOUND:
@@ -588,7 +543,6 @@ def get_ida_type(type):
     return found
 
 def define_ida_type(decl):
-    # print('DEFINE', decl.displayname, decl.type.is_const_qualified())
     tif = get_stock_or_build_ida_type(decl.type)
     visited[decl.hash] = tif
     return tif
@@ -596,17 +550,10 @@ def define_ida_type(decl):
 def get_stock_or_build_ida_type(type):
     stock_type = handle_stock_type(type)
 
-    # print(f'stock results: {stock_type}')
-
     return stock_type if stock_type != None else build_ida_type(type)
 
 def build_ida_type(type):
-    # print(f'building type')
-
     tif = type_handlers[type.kind](type)
-
-    # print(f'built: {tif}, name is {tif.get_type_name()}')
-    
     return tif
 
 @TypeHandler(TypeKind.UNEXPOSED)
@@ -746,7 +693,7 @@ class VFunc:
             self.offset = offset
 
     def overrides(self, that):
-        return (self.is_dtor() and that.is_dtor()) or (self.get_name() == that.get_name() and [t.get_canonical() for t in self.get_arguments()] == [t.get_canonical() for t in that.get_arguments()])
+        return (self.is_dtor() and that.is_dtor()) or (self.get_name() == that.get_name() and [t.get_canonical() for t in self.get_arguments()] == [t.get_canonical() for t in that.get_arguments()] and self.is_const_method() == that.is_const_method())
 
 class DeclVFunc(VFunc):
     def __init__(self, decl, class_tif):
@@ -755,6 +702,9 @@ class DeclVFunc(VFunc):
     
     def is_dtor(self):
         return self.decl.kind == CursorKind.DESTRUCTOR
+    
+    def is_const_method(self):
+        return self.decl.is_const_method()
     
     def get_name(self):
         return self.decl.spelling
@@ -775,6 +725,9 @@ class DefaultDtorVFunc(VFunc):
     
     def is_dtor(self):
         return True
+    
+    def is_const_method(self):
+        return False
     
     def get_name(self):
         return f'~{self.class_decl.spelling}'
@@ -853,7 +806,6 @@ def handle_record(type):
     align = type.get_align()
     udt = idaapi.udt_type_data_t()
     if align > 1:
-        # print(f'align: {align}, ida_align: {calc_min_align(align)}')
         udt.sda = calc_min_align(align)
 
     vtbl_infos = []
@@ -880,11 +832,11 @@ def handle_record(type):
     def create_bases():
         delayed_base_udts = []
         offset = 0
-        
+
         for member in decl.get_children():
             if member.kind == CursorKind.CXX_BASE_SPECIFIER:
                 member_type = get_ida_type(member.type)
-                member_decl = member.type.get_declaration()
+                member_decl = member.type.get_canonical().get_declaration()
                 base_vtbl_infos = vtable_infos[member_decl.hash]
 
                 member_udt = idaapi.udt_member_t()
@@ -947,18 +899,17 @@ def handle_record(type):
             save_tinfo(vtbl_tif, vtbl_name)
 
             mangled_vtable_name = decl.get_mangled_vtable_name(vtbl_info.base_path)
-            attempt_applying_type_to_name(mangled_vtable_name, vtbl_tif)
+            discover_sdk_name(mangled_vtable_name, vtbl_tif)
 
             vtbl_ea = ida_name.get_name_ea(BADADDR, mangled_vtable_name)
-            # print(f'trying to set vtable {mangled_vtable_name} at {vtbl_ea or 0:x}')
             if vtbl_ea != BADADDR:
                 for i, member in enumerate(vtbl_info.members):
                     vfunc_ea = ida_bytes.get_qword(vtbl_ea + 8 * i)
 
                     if not is_stock_function(vfunc_ea):
                         mangled_member_name = member.get_mangled_name()
-                        set_func_ea_name(vfunc_ea, mangled_member_name)
-                        attempt_applying_type_to_name(mangled_member_name, member.get_tif())
+                        set_generated_func_name(vfunc_ea, mangled_member_name, True)
+                        discover_sdk_name(mangled_member_name, member.get_tif())
 
             if is_root:
                 vtbl_ptr_tif = idaapi.tinfo_t()
@@ -974,7 +925,7 @@ def handle_record(type):
     def create_nonvirtual_methods():
         for member in decl.get_children():
             if member.kind in (CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR, CursorKind.DESTRUCTOR) and not member.is_virtual_method():
-                attempt_applying_type_to_name(member.mangled_name, resolve_function(member.type, 0, None if member.is_static_method() else forward_tif, member))
+                discover_sdk_name(member.mangled_name, resolve_function(member.type, 0, None if member.is_static_method() else forward_tif, member))
 
     # if not type.is_pod():
     udt.taudt_bits |= TAUDT_CPPOBJ
@@ -1038,7 +989,7 @@ def handle_struct(item):
 def typedefs(item):
     type = get_ida_type(item.type)
 
-    attempt_applying_type_to_name(item.mangled_name, type)
+    discover_sdk_name(item.mangled_name, type)
 
 
 @CursorHandler(CursorKind.NAMESPACE)
@@ -1046,16 +997,6 @@ def typedefs(item):
 @CursorHandler(CursorKind.UNEXPOSED_DECL)
 def linkage(item):
     process_cursor(item)
-
-# @CursorHandler(CursorKind.ENUM_DECL)
-# def handle_enum(item):
-#     members = []
-#     for member in item.get_children():
-#         members.append((member.spelling, member.enum_value))
-#     enum_id = add_enum(idaapi.BADADDR, get_decl_name(item), 0)
-#     for name, value in members:
-#         add_enum_member(enum_id, name, value, -1)
-
 
 def parse_file(path, args=[]):
     index = Index.create()
@@ -1087,7 +1028,7 @@ class ChooseSDKName(ida_kernwin.Choose):
         super().__init__('Known names in SDK', [
             ['Short Name', 50 | ida_kernwin.Choose.CHCOL_PLAIN],
             ['Full Name', 100 | ida_kernwin.Choose.CHCOL_PLAIN],
-        ], ida_kernwin.Choose.CH_MODAL)# | ida_kernwin.Choose.CH_ATTRS)
+        ], ida_kernwin.Choose.CH_MODAL)
 
     def OnGetSize(self):
         return len(self.names)
@@ -1100,19 +1041,8 @@ class ChooseSDKName(ida_kernwin.Choose):
 
         if not short_demangled_name or not full_name:
             return [name, name]
-        
-        # parenidx = short_demangled_name.find('(')
-        # before_paren = short_demangled_name if parenidx == -1 else short_demangled_name[:parenidx]
-
-        # qualsepidx = before_paren.rfind('::')
-        # class_name = '' if qualsepidx == -1 else short_demangled_name[:qualsepidx]
-        # func_name = short_demangled_name if qualsepidx == -1 else short_demangled_name[qualsepidx+2:]
 
         return [short_demangled_name, full_name]
-
-    # def OnGetLineAttr(self, n):
-    #     name = self.names[n].name
-    #     return 0x00ff0000, ida_kernwin.CHITEM_GRAY
 
 def apply_sdk_name(ea):
     names = [*known_mangled_names] # intentional copy to remain consistent even if the known mangled names somehow change
@@ -1121,8 +1051,15 @@ def apply_sdk_name(ea):
     if choice != -1:
         known = names[choice]
 
-        ida_name.set_name(ea, known.name, 0)
-        attempt_applying_type_to_name(known.name, known.tif)
+        func = ida_funcs.get_func(ea)
+
+        if func:
+            thunk = require_thunk(func)
+            set_generated_func_name(thunk, known.name, True)
+        else:
+            set_generated_name(ea, known.name, True)
+
+        apply_type_to_name(known.name, known.tif)
 
 def generate_thunks():
     image_base = ida_nalt.get_imagebase()

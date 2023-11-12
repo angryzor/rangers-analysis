@@ -1,6 +1,14 @@
+import sys
+
+analmodules = [mod for mod in sys.modules if mod.startswith('analrangers')]
+for mod in analmodules:
+    del sys.modules[mod]
+
 from ida_bytes import get_qword, get_dword, get_byte
 from ida_funcs import get_func
 from ida_ua import o_reg
+from ida_name import get_name, get_name_ea
+from idaapi import BADADDR
 from analrangers.lib.util import require_type, require_name_ea, require_cstr
 from analrangers.lib.iterators import require_unique, null_terminated_ptr_array_iterator
 from analrangers.lib.funcs import require_function, find_unique_thunk
@@ -13,6 +21,30 @@ from datetime import datetime
 from collections import OrderedDict
 import os
 import ctypes
+import re
+
+# because of denuvo obfuscating some static initializers -_-
+fixed_overrides = {
+    'FxBrunetonSky': { 'member_count': 19, 'parent': 0 },
+    'FxBrunetonSkyNight': { 'member_count': 8, 'parent': 0 },
+    'FxCloudBlendParameter': { 'member_count': 4, 'parent': 0 },
+    'FxCloudProcedural': { 'member_count': 4, 'parent': 0 },
+    'FxCrepuscularRay': { 'member_count': 4, 'parent': 0 },
+    'FxDensityParameter': { 'member_count': 19, 'parent': 0 },
+    'FxDensityLodParameter': { 'member_count': 5, 'parent': 0 },
+    'FxDensityDebugParameter': { 'member_count': 14, 'parent': 0 },
+    'ColorDropout': { 'member_count': 6, 'parent': 0 },
+    'ColorShift': { 'member_count': 4, 'parent': 0 },
+    'DebugScreenOption': { 'member_count': 10, 'parent': 0 },
+    'FxAntiAliasing': { 'member_count': 3, 'parent': 0 },
+    'FxBloomParameter': { 'member_count': 5, 'parent': 0 },
+    'FxCameraControlParameter': { 'member_count': 3, 'parent': 0 },
+    'FxChromaticAberrationParameter': { 'member_count': 9, 'parent': 0 },
+    'FxColorAccessibilityFilterParameter': { 'member_count': 9, 'parent': 0 },
+    'FxColorContrastParameter': { 'member_count': 17, 'parent': 0 },
+    'FxCyberSpaceStartNoiseParameter': { 'member_count': 11, 'parent': 0 },
+    'FxDOFParameter': { 'member_count': 22, 'parent': 0 },
+}
 
 rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 rfl_enum_member_tif = require_type('hh::fnd::RflClassEnumMember')
@@ -150,37 +182,50 @@ def emit_member(structs, enums, members, member_ea):
 visited_structs = set()
 
 def emit_struct(structs, rfl_class_ea):
-    rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
+    enums = OrderedDict()
+    members = []
 
-    initializer_func = require_function(rfl_class_cref)
-    initializer_func_ea = initializer_func.start_ea
+    m = re.match(r'\?rflClass@([A-Za-z]+)@rfl@app@@2VRflClass@fnd@hh@@B', get_name(rfl_class_ea))
 
-    name = require_cstr(read_source_op_addr_from_reg_assignment(initializer_func_ea, 2))
+    if m and m.group(1) in fixed_overrides:
+        name = m.group(1)
+        print(f'info: handling rfl class at {rfl_class_ea:x}: {name}')
+
+        parent_ea = fixed_overrides[name]['parent']
+
+        members_ea = get_name_ea(BADADDR, f'?rflClassMembers@{name}@rfl@app@@0QBVRflClassMember@fnd@hh@@B')
+        members_count = fixed_overrides[name]['member_count']
+    else:
+        rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
+
+        initializer_func = require_function(rfl_class_cref)
+        initializer_func_ea = initializer_func.start_ea
+
+        name = require_cstr(read_source_op_addr_from_reg_assignment(initializer_func_ea, 2))
+        print(f'info: handling rfl class at {rfl_class_ea:x}: {name}')
+
+        parent_ea = read_source_op_addr_from_reg_assignment(initializer_func_ea, 8)
+
+        enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20)
+        enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28)
+        
+        members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30)
+        members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38)
 
     if name in visited_structs:
         return name
 
-    print(f'info: handling rfl class at {rfl_class_ea:x}: {name}')
-
-    enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20)
-    enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28)
-    
-    members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30)
-    members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38)
-
-    enums = OrderedDict()
-    members = []
-
     visited_structs.add(name)
 
-    # To handle unreferenced enums
-    for i in range(0, enums_count):
-        emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
+    if name not in fixed_overrides:
+        # To handle unreferenced enums, we currently just skip this for the denuvo'd enums.
+        for i in range(0, enums_count):
+            emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
     
     for i in range(0, members_count):
         emit_member(structs, enums, members, members_ea + i * rfl_class_member_tif.get_size())
     
-    text = f'    struct {name} {"{"}\n'
+    text = f'    struct {name}{f" : {emit_struct(structs, parent_ea)}" if parent_ea != 0 else ""} {"{"}\n'
 
     for k in enums:
         text += enums[k]
@@ -208,11 +253,13 @@ rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x7a)
 structs = OrderedDict()
 
 for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
+    print(f'top level: handling class {rfl_class_ea:x}')
     handle_anal_exceptions(lambda: emit_struct(structs, rfl_class_ea))
 
 f = open(f'rangers-rfl.h', 'w')
 f.write('namespace app::rfl {\n')
 for k in structs:
+    print('writing', k)
     f.write(structs[k])
 f.write('}\n')
 f.close()
