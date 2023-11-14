@@ -73,39 +73,39 @@ def set_generated_func_name(f, name, is_certain = False):
 
         set_generated_name(f.start_ea, f"{'j_' * i}{name}", is_certain)
 
-def set_private_instantiator_func_name(f, class_name, func_name = 'Instantiate'):
-    set_generated_func_name(f, create_name('?{0}@CAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']))
+def set_private_instantiator_func_name(f, class_name, is_certain = False, func_name = 'Create'):
+    set_generated_func_name(f, create_name('?{0}@CAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']), is_certain)
 
-def set_public_instantiator_func_name(f, class_name, func_name = 'Instantiate'):
-    set_generated_func_name(f, create_name('?{0}@SAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']))
+def set_public_instantiator_func_name(f, class_name, is_certain = False, func_name = 'Create'):
+    set_generated_func_name(f, create_name('?{0}@SAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']), is_certain)
 
-def set_simple_constructor_func_name(f, class_name):
-    set_generated_func_name(f, create_name('??0{0}@QEAA@PEAV{1}@@Z', class_name, ['IAllocator', 'fnd', 'csl']))
+def set_simple_constructor_func_name(f, class_name, is_certain = False):
+    set_generated_func_name(f, create_name('??0{0}@QEAA@PEAV{1}@@Z', class_name, ['IAllocator', 'fnd', 'csl']), is_certain)
 
-def set_destructor_func_name(dtor_thunk, class_name):
+def set_destructor_func_name(dtor_thunk, class_name, is_certain = False):
     dtor = find_implementation(dtor_thunk)
 
     if is_deleting_destructor(dtor):
-        set_generated_func_name(dtor_thunk, create_name('??_G{0}@QEAAXXZ', class_name))
+        set_generated_func_name(dtor_thunk, create_name('??_G{0}@QEAAXXZ', class_name), is_certain)
         
         if base_dtor_thunk := guess_vbase_destructor_thunk_from_deleting_destructor(dtor):
-            set_generated_func_name(base_dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name))
+            set_generated_func_name(base_dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name), is_certain)
     else:
-        set_generated_func_name(dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name))
+        set_generated_func_name(dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name), is_certain)
 
-def set_static_getter_func_name(f, class_name, object_var, getter_name):
+def set_static_getter_func_name(f, class_name, object_var, getter_name, is_certain = False):
     qual = 'B' if object_var.const else 'A'
     strtyp = 'U' if object_var.struct else 'V'
-    set_generated_func_name(f, create_name('?{0}@SAPE' + qual + strtyp + '{1}@XZ', [getter_name, *class_name], object_var.class_name))
+    set_generated_func_name(f, create_name('?{0}@SAPE' + qual + strtyp + '{1}@XZ', [getter_name, *class_name], object_var.class_name), is_certain)
 
-def set_static_initializer_func_name(f, class_name, object_var):
-    set_generated_func_name(f, create_name(f'??__E{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name))
+def set_static_initializer_func_name(f, class_name, object_var, is_certain = False):
+    set_generated_func_name(f, create_name(f'??__E{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), is_certain)
 
-def set_static_atexit_dtor_func_name(f, class_name, object_var):
-    set_generated_func_name(f, create_name(f'??__F{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name))
+def set_static_atexit_dtor_func_name(f, class_name, object_var, is_certain = False):
+    set_generated_func_name(f, create_name(f'??__F{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), is_certain)
 
-def set_static_var_name(ea, class_name, object_var):
-    set_generated_name(ea, create_name(f'?{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name))
+def set_static_var_name(ea, class_name, object_var, is_certain = False):
+    set_generated_name(ea, create_name(f'?{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), is_certain)
 
 def friendly_class_name(class_name):
     return "::".join(reversed(class_name))

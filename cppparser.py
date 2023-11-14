@@ -9,7 +9,6 @@ import os
 from clang.cindex import Index, CursorKind, TypeKind, BaseEnumeration, conf, TranslationUnit, _CXString, Cursor, register_function
 import idaapi
 import ida_name
-import ida_ua
 import ida_funcs
 import ida_kernwin
 import ida_segment
@@ -19,7 +18,8 @@ from ida_bytes import *
 from ida_typeinf import *
 from idc import *
 from analrangers.lib.naming import nlist_names, set_generated_func_name, set_generated_name
-from analrangers.lib.funcs import require_thunk
+from analrangers.lib.funcs import require_thunk, ensure_function
+from analrangers.lib.analysis_exceptions import AnalException
 from ctypes import POINTER, c_uint
 
 if not conf.loaded:
@@ -899,6 +899,7 @@ def handle_record(type):
             save_tinfo(vtbl_tif, vtbl_name)
 
             mangled_vtable_name = decl.get_mangled_vtable_name(vtbl_info.base_path)
+            print(f'Trying to set vtable name {mangled_vtable_name}')
             discover_sdk_name(mangled_vtable_name, vtbl_tif)
 
             vtbl_ea = ida_name.get_name_ea(BADADDR, mangled_vtable_name)
@@ -908,7 +909,12 @@ def handle_record(type):
 
                     if not is_stock_function(vfunc_ea):
                         mangled_member_name = member.get_mangled_name()
-                        set_generated_func_name(vfunc_ea, mangled_member_name, True)
+
+                        try:
+                            set_generated_func_name(ensure_function(vfunc_ea), mangled_member_name, True)
+                        except AnalException:
+                            set_generated_name(vfunc_ea, mangled_member_name, True)
+
                         discover_sdk_name(mangled_member_name, member.get_tif())
 
             if is_root:
@@ -1054,8 +1060,11 @@ def apply_sdk_name(ea):
         func = ida_funcs.get_func(ea)
 
         if func:
-            thunk = require_thunk(func)
-            set_generated_func_name(thunk, known.name, True)
+            try:
+                thunk = require_thunk(func)
+                set_generated_func_name(thunk, known.name, True)
+            except AnalException:
+                set_generated_name(ea, known.name, True)
         else:
             set_generated_name(ea, known.name, True)
 
@@ -1110,14 +1119,17 @@ class CPPParserActionHandler(ida_kernwin.action_handler_t):
 class ApplySDKNameActionHandler(CPPParserActionHandler):
     def activate(self, ctx):
         def get_target_ea():
-            print(ctx.cur_value)
+            print(f'{ctx.cur_value:x}, {ctx.cur_extracted_ea:x}, {ctx.cur_ea:x}')
             if ida_segment.getseg(ctx.cur_value):
                 return ctx.cur_value
-            elif ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE and not ctx.cur_value == BADADDR:
-                vdui = ida_hexrays.get_widget_vdui(ctx.widget)
-                treeitem = vdui.cfunc.treeitems.at(ctx.cur_value)
-                if treeitem.is_expr() and treeitem.cexpr.obj_ea != BADADDR:
-                    return treeitem.cexpr.obj_ea
+            elif ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
+                if not ctx.cur_value == BADADDR:
+                    vdui = ida_hexrays.get_widget_vdui(ctx.widget)
+                    treeitem = vdui.cfunc.treeitems.at(ctx.cur_value)
+                    if treeitem.is_expr() and treeitem.cexpr.obj_ea != BADADDR:
+                        return treeitem.cexpr.obj_ea
+                elif ctx.cur_ea != BADADDR and ida_funcs.get_func(ctx.cur_ea) and ida_funcs.get_func(ctx.cur_ea).start_ea == ctx.cur_ea:
+                    return ctx.cur_ea
 
             print('invalid target')
 
