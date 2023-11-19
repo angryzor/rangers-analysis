@@ -158,6 +158,8 @@ def guess_subclass_constructors_from_constructor(f):
                 yield subf
         except FunctionNotFoundException:
             print(f'warn: ignoring {cref:x} in subconstructor search as it is not a function')
+        except AnalException as e:
+            print(f'warn: could not try {cref:x} due to analysis exception: {e}')
 
 def estimate_class_name_from_vtable_name(name):
     m = re.match(r'^\?\?_7(.+)@@6B@$', name)

@@ -6,6 +6,7 @@ for mod in analmodules:
 
 import re
 import os
+import csv
 from clang.cindex import Index, CursorKind, TypeKind, BaseEnumeration, conf, TranslationUnit, _CXString, Cursor, register_function
 import idaapi
 import ida_name
@@ -1111,6 +1112,22 @@ PUBLIC {name}
     f.write('end\n')
     f.close()
 
+def generate_address_list():
+    with open(os.path.join(API_LOCATION, 'addresses.csv'), 'w', newline='') as f:
+        csvw = csv.writer(f)
+        
+        for name, ea in nlist_names():
+            demangled = ida_name.demangle_name(name, 0)
+            if name not in ('atexit', 'singletonList') and not demangled:
+                continue
+
+            csvw.writerow([f'{ea:x}', name, int(has_user_name(get_flags(ea)))])
+
+def import_address_list():
+    with open(os.path.join(API_LOCATION, 'addresses.csv'), 'r', newline='') as f:
+        for row in csv.reader(f):
+            set_generated_name(int(row[0], 16), row[1], row[2] == 1)
+
 class CPPParserActionHandler(ida_kernwin.action_handler_t):
     def __init__(self, cpp_parser):
         super().__init__()
@@ -1150,7 +1167,14 @@ class SyncHandler(CPPParserActionHandler):
 class GenerateThunksHandler(CPPParserActionHandler):
     def activate(self, ctx):
         generate_thunks()
+        generate_address_list()
         ida_kernwin.update_action_state('cppparser:generate-thunks', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
+class ImportAddressesHandler(CPPParserActionHandler):
+    def activate(self, ctx):
+        import_address_list()
+        ida_kernwin.update_action_state('cppparser:import-addresses', ida_kernwin.AST_ENABLE_ALWAYS)
         return 0
 
 class CPPParserUIHooks(ida_kernwin.UI_Hooks):
@@ -1168,6 +1192,10 @@ class CPPParser:
         ida_kernwin.register_action(generate_thunks_action)
         ida_kernwin.update_action_state('cppparser:generate-thunks', ida_kernwin.AST_ENABLE_ALWAYS)
 
+        generate_thunks_action = ida_kernwin.action_desc_t('cppparser:import-addresses', 'Import addresses from CSV', ImportAddressesHandler(self))
+        ida_kernwin.register_action(generate_thunks_action)
+        ida_kernwin.update_action_state('cppparser:import-addresses', ida_kernwin.AST_ENABLE_ALWAYS)
+
         apply_sdk_name_action = ida_kernwin.action_desc_t('cppparser:apply-sdk-name', 'Apply SDK name', ApplySDKNameActionHandler(self))
         ida_kernwin.register_action(apply_sdk_name_action)
         ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
@@ -1176,6 +1204,7 @@ class CPPParser:
 
         ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:sync')
         ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:generate-thunks')
+        ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:import-addresses')
 
         self.ui_hooks = CPPParserUIHooks()
         self.ui_hooks.hook()
@@ -1186,12 +1215,14 @@ class CPPParser:
         self.ui_hooks.unhook()
         # ida_kernwin.del_hotkey(apply_sdk_name_hk)
 
+        ida_kernwin.detach_action_from_toolbar('cppparser', 'cppparser:import-addresses')
         ida_kernwin.detach_action_from_toolbar('cppparser', 'cppparser:generate-thunks')
         ida_kernwin.detach_action_from_toolbar('cppparser', 'cppparser:sync')
 
         ida_kernwin.delete_toolbar('cppparser')
 
         ida_kernwin.unregister_action('cppparser:apply-sdk-name')
+        ida_kernwin.unregister_action('cppparser:import-addresses')
         ida_kernwin.unregister_action('cppparser:generate-thunks')
         ida_kernwin.unregister_action('cppparser:sync')
 
