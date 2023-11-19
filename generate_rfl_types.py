@@ -25,10 +25,18 @@ import re
 
 # because of denuvo obfuscating some static initializers -_-
 fixed_overrides = {
+    'DetailMesh': { 'member_count': 2, 'parent': 0 },
+    'OffMeshLinkParameter': { 'member_count': 1, 'parent': 0 },
+    'Partitioning': { 'member_count': 1, 'parent': 0 },
+    'Polygonization': { 'member_count': 3, 'parent': 0 },
+    'Rasterization': { 'member_count': 2, 'parent': 0 },
+    'Region': { 'member_count': 2, 'parent': 0 },
+    'World': { 'member_count': 2, 'parent': 0 },
     'FxBrunetonSky': { 'member_count': 19, 'parent': 0 },
     'FxBrunetonSkyNight': { 'member_count': 8, 'parent': 0 },
     'FxCloudBlendParameter': { 'member_count': 4, 'parent': 0 },
     'FxCloudProcedural': { 'member_count': 4, 'parent': 0 },
+    'FxCloudShadowParameter': { 'member_count': 3, 'parent': 0 },
     'FxCrepuscularRay': { 'member_count': 4, 'parent': 0 },
     'FxDensityParameter': { 'member_count': 19, 'parent': 0 },
     'FxDensityLodParameter': { 'member_count': 5, 'parent': 0 },
