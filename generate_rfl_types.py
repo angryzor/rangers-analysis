@@ -152,7 +152,7 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
         case 'TYPE_MATRIX34': return 'csl::math::Matrix34'
         case 'TYPE_MATRIX44': return 'csl::math::Matrix44'
         case 'TYPE_POINTER': return 'void*'
-        case 'TYPE_ARRAY': return f'csl::ut::Array<{emit_type(structs, enums, member_ea, subtype)}>'
+        case 'TYPE_ARRAY': return f'csl::ut::MoveArray<{emit_type(structs, enums, member_ea, subtype)}>'
         case 'TYPE_SIMPLE_ARRAY': return f'{emit_type(structs, enums, member_ea, subtype)}*'
         case 'TYPE_ENUM':
             initializer_xref = require_unique(f"Can't find an enum assigned for {member_ea:x}", [*filter(is_valid_enum_assignment_xref, get_code_drefs_to(member_ea + 0x10))])
@@ -174,7 +174,7 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
         case 'TYPE_FLAGS': return f'csl::ut::Bitset<{emit_type(structs, enums, member_ea, subtype)}>'
         case 'TYPE_CSTRING': return 'char*'
         case 'TYPE_STRING': return 'csl::ut::VariableString'
-        case 'TYPE_OBJECT_ID': return 'uint32_t'
+        case 'TYPE_OBJECT_ID': return 'hh::game::ObjectId'
         case 'TYPE_POSITION': return 'csl::math::Vector3'
         case 'TYPE_COLOR_BYTE': return 'csl::ut::Color<uint8_t>'
         case 'TYPE_COLOR_FLOAT': return 'csl::ut::Color<float>'
