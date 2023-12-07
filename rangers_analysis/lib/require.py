@@ -1,6 +1,6 @@
-from .analysis_exceptions import AnalException
+from .analysis_exceptions import AnalysisException
 
-class NotFoundException(AnalException):
+class NotFoundException(AnalysisException):
     pass
 
 def require(Err, x, *err_args, **kwargs):

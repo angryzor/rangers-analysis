@@ -1,12 +1,12 @@
 from ida_bytes import bin_search, BIN_SEARCH_FORWARD
 from ida_segment import get_segm_by_name
 from ida_funcs import get_fchunk
-from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
-from analrangers.lib.funcs import ensure_functions, func_parents, find_implementation, require_function, require_thunk
-from analrangers.lib.heuristics import get_best_class_name, get_getter_xref, require_constructor_thunk_from_instantiator
-from analrangers.lib.util import get_cstr, force_apply_tinfo, require_type
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
-from analrangers.lib.segments import text_seg
+from rangers_analysis.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
+from rangers_analysis.lib.funcs import ensure_functions, func_parents, find_implementation, require_function, require_thunk
+from rangers_analysis.lib.heuristics import get_best_class_name, get_getter_xref, require_constructor_thunk_from_instantiator
+from rangers_analysis.lib.util import get_cstr, force_apply_tinfo, require_type
+from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
+from rangers_analysis.lib.segments import text_seg
 from .report import handle_anal_exceptions
 
 service_class_tif = require_type('hh::game::GameServiceClass')

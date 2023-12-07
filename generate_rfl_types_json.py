@@ -22,6 +22,7 @@ from collections import OrderedDict
 import os
 import ctypes
 import re
+import json
 
 # because of denuvo obfuscating some static initializers -_-
 fixed_overrides = {
@@ -119,41 +120,41 @@ def emit_enum(enums, enum_ea, underlying_type = None):
     member_arr_ea = get_qword(enum_ea + 8)
     count = get_qword(enum_ea + 16)
 
-    text = f'        enum class {name}{f" : {underlying_type}" if underlying_type else ""} {"{"}\n'
+    # text = f'        enum class {name}{f" : {underlying_type}" if underlying_type else ""} {"{"}\n'
 
+    values = OrderedDict()
     for i in range(0, count):
         enum_member_ea = member_arr_ea + i * rfl_enum_member_tif.get_size()
-
-        text += f'            {require_cstr(get_qword(enum_member_ea + 8))} = {ctypes.c_long(get_dword(enum_member_ea)).value},\n'
+        values[require_cstr(get_qword(enum_member_ea + 8))] = ctypes.c_long(get_dword(enum_member_ea)).value
     
-    text += '        };\n\n'
+    # text += '        };\n\n'
 
-    enums[name] = text
-    
+    enums[name] = values
+
     return name
 
 def emit_type(structs, enums, member_ea, typ, subtype = None):
     match types[typ]:
-        case 'TYPE_VOID': return 'void'
-        case 'TYPE_BOOL': return 'bool'
-        case 'TYPE_SINT8': return 'int8_t'
-        case 'TYPE_UINT8': return 'uint8_t'
-        case 'TYPE_SINT16': return 'int16_t'
-        case 'TYPE_UINT16': return 'uint16_t'
-        case 'TYPE_SINT32': return 'int32_t'
-        case 'TYPE_UINT32': return 'uint32_t'
-        case 'TYPE_SINT64': return 'int64_t'
-        case 'TYPE_UINT64': return 'uint64_t'
-        case 'TYPE_FLOAT': return 'float'
-        case 'TYPE_VECTOR2': return 'csl::math::Vector2'
-        case 'TYPE_VECTOR3': return 'csl::math::Vector3'
-        case 'TYPE_VECTOR4': return 'csl::math::Vector4'
-        case 'TYPE_QUATERNION': return 'csl::math::Quaternion'
-        case 'TYPE_MATRIX34': return 'csl::math::Matrix34'
-        case 'TYPE_MATRIX44': return 'csl::math::Matrix44'
-        case 'TYPE_POINTER': return 'void*'
-        case 'TYPE_ARRAY': return f'csl::ut::MoveArray<{emit_type(structs, enums, member_ea, subtype)}>'
-        case 'TYPE_SIMPLE_ARRAY': return f'{emit_type(structs, enums, member_ea, subtype)}*'
+        case 'TYPE_VOID': return { 'type': 'void' }
+        case 'TYPE_BOOL': return { 'type': 'bool' }
+        case 'TYPE_SINT8': return { 'type': 'sint8' }
+        case 'TYPE_UINT8': return { 'type': 'uint8' }
+        case 'TYPE_SINT16': return { 'type': 'sint16' }
+        case 'TYPE_UINT16': return { 'type': 'uint16' }
+        case 'TYPE_SINT32': return { 'type': 'sint32' }
+        case 'TYPE_UINT32': return { 'type': 'uint32' }
+        case 'TYPE_SINT64': return { 'type': 'sint64' }
+        case 'TYPE_UINT64': return { 'type': 'uint64' }
+        case 'TYPE_FLOAT': return { 'type': 'float' }
+        case 'TYPE_VECTOR2': return { 'type': 'vector2' }
+        case 'TYPE_VECTOR3': return { 'type': 'vector3' }
+        case 'TYPE_VECTOR4': return { 'type': 'vector4' }
+        case 'TYPE_QUATERNION': return { 'type': 'quaternion' }
+        case 'TYPE_MATRIX34': return { 'type': 'matrix34' }
+        case 'TYPE_MATRIX44': return { 'type': 'matrix44' }
+        case 'TYPE_POINTER': return { 'type': 'pointer', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'TYPE_ARRAY': return { 'type': 'array', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'TYPE_SIMPLE_ARRAY': return { 'type': 'array', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
         case 'TYPE_ENUM':
             initializer_xref = require_unique(f"Can't find an enum assigned for {member_ea:x}", [*filter(is_valid_enum_assignment_xref, get_code_drefs_to(member_ea + 0x10))])
             f = require_function(initializer_xref)
@@ -165,26 +166,27 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
                 if insn.mnem == 'mov' and insn.insn.Op1.type == o_reg and insn.insn.Op1.reg == reg:
                     enum_ea = get_qword(insn.insn.Op2.addr)
                     
-                    return emit_enum(enums, enum_ea, emit_type(structs, enums, member_ea, subtype))
+                    return { 'type': 'enum', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'], 'enum': emit_enum(enums, enum_ea) }
 
             raise AnalysisException("couldn't find an enum assignment")
         case 'TYPE_STRUCT':
-            return emit_struct(structs, get_qword(member_ea + 0x8))
+            return { 'type': 'struct', 'struct': emit_struct(structs, get_qword(member_ea + 0x8)) }
 
-        case 'TYPE_FLAGS': return f'csl::ut::Bitset<{emit_type(structs, enums, member_ea, subtype)}>'
-        case 'TYPE_CSTRING': return 'char*'
-        case 'TYPE_STRING': return 'csl::ut::VariableString'
-        case 'TYPE_OBJECT_ID': return 'hh::game::ObjectId'
-        case 'TYPE_POSITION': return 'csl::math::Vector3'
-        case 'TYPE_COLOR_BYTE': return 'csl::ut::Color<uint8_t>'
-        case 'TYPE_COLOR_FLOAT': return 'csl::ut::Color<float>'
+        case 'TYPE_FLAGS': return { 'type': 'flags', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'TYPE_CSTRING': return { 'type': 'cstring' }
+        case 'TYPE_STRING': return { 'type': 'string' }
+        case 'TYPE_OBJECT_ID': return { 'type': 'csetobjectid' }
+        case 'TYPE_POSITION': return { 'type': 'position' }
+        case 'TYPE_COLOR_BYTE': return { 'type': 'color8' }
+        case 'TYPE_COLOR_FLOAT': return { 'type': 'colorF' }
 
 def emit_member(structs, enums, members, member_ea):
     typ = get_byte(member_ea + 0x18)
     subtype = get_byte(member_ea + 0x19)
     arr_len = get_dword(member_ea + 0x1C)
+    offset = get_dword(member_ea + 0x24)
 
-    members.append(f'        {emit_type(structs, enums, member_ea, typ, subtype)} {require_cstr(get_qword(member_ea))}{f"[{arr_len}]" if arr_len != 0 else ""};\n')
+    members.append({ 'name': require_cstr(get_qword(member_ea)), **emit_type(structs, enums, member_ea, typ, subtype), 'offset': offset, **({ 'array_length': arr_len } if arr_len != 0 else {}) })
 
 
 visited_structs = set()
@@ -233,24 +235,7 @@ def emit_struct(structs, rfl_class_ea):
     for i in range(0, members_count):
         emit_member(structs, enums, members, members_ea + i * rfl_class_member_tif.get_size())
     
-    text = f'    struct {name}{f" : {emit_struct(structs, parent_ea)}" if parent_ea != 0 else ""} {"{"}\n'
-
-    for k in enums:
-        text += enums[k]
-    
-    for m in members:
-        text += m
-    
-    text +=  '\n'
-    text +=  '        static const hh::fnd::RflTypeInfo typeInfo;\n'
-    text +=  '        static const hh::fnd::RflClass rflClass;\n'
-    text +=  '    private:\n'
-    text += f'        static void Construct({name}* pInstance, csl::fnd::IAllocator* pAllocator);\n'
-    text += f'        static void Finish({name}* pInstance);\n'
-    text += f'        static void Clean({name}* pInstance);\n'
-    text +=  '    };\n\n'
-
-    structs[name] = text
+    structs[name] = { 'name': name, **({ 'parent': emit_struct(structs, parent_ea) } if parent_ea != 0 else {}), 'enums': enums, 'members': members }
 
     return name
 
@@ -264,12 +249,8 @@ for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
     print(f'top level: handling class {rfl_class_ea:x}')
     handle_anal_exceptions(lambda: emit_struct(structs, rfl_class_ea))
 
-f = open(f'rangers-rfl.h', 'w')
-f.write('namespace app::rfl {\n')
-for k in structs:
-    print('writing', k)
-    f.write(structs[k])
-f.write('}\n')
+f = open(f'rangers-rfl.json', 'w')
+f.write(json.dumps(structs, indent=2))
 f.close()
 
 print_report()

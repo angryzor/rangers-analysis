@@ -1,14 +1,14 @@
 from ida_bytes import get_qword, get_dword, get_flags, is_strlit
 from ida_typeinf import tinfo_t, idc_guess_type
 from ida_segment import getseg, get_segm_name
-from analrangers.lib.funcs import ensure_functions, find_implementation, require_function
-from analrangers.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator, discover_class_hierarchy, get_getter_xref
-from analrangers.lib.util import get_cstr, require_type, force_apply_tinfo, force_apply_tinfo_array, require_name_ea
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVarType, StaticObjectVar, friendly_class_name
-from analrangers.lib.ua_data_extraction import read_source_op_addr
-from analrangers.lib.iterators import null_terminated_ptr_array_iterator
-from analrangers.lib.xrefs import get_drefs_to
-from analrangers.lib.segments import data_seg
+from rangers_analysis.lib.funcs import ensure_functions, find_implementation, require_function
+from rangers_analysis.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator, discover_class_hierarchy, get_getter_xref
+from rangers_analysis.lib.util import get_cstr, require_type, force_apply_tinfo, force_apply_tinfo_array, require_name_ea
+from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVarType, StaticObjectVar, friendly_class_name
+from rangers_analysis.lib.ua_data_extraction import read_source_op_addr
+from rangers_analysis.lib.iterators import null_terminated_ptr_array_iterator
+from rangers_analysis.lib.xrefs import get_drefs_to
+from rangers_analysis.lib.segments import data_seg
 from .report import handle_anal_exceptions
 
 obj_class_tif = require_type('hh::game::GameObjectClass')

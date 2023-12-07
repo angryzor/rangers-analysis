@@ -1,7 +1,7 @@
 from ida_idaapi import BADADDR
 from ida_ua import insn_t, decode_insn, decode_prev_insn, print_insn_mnem, o_reg, o_displ
 from .iterators import find
-from .analysis_exceptions import AnalException
+from .analysis_exceptions import AnalysisException
 
 class DecodedInsn:
     def __init__(self, insn, ea, size):
@@ -19,7 +19,7 @@ def decoded_insns_forward(start_ea, end_ea = None):
         insn = insn_t()
         insn_size = decode_insn(insn, insn_ea)
         if insn_size == 0:
-            raise AnalException(f"Couldn't decode instruction at {insn_ea:x}")
+            raise AnalysisException(f"Couldn't decode instruction at {insn_ea:x}")
         yield DecodedInsn(insn, insn_ea, insn_size)
         insn_ea += insn_size
 
@@ -29,7 +29,7 @@ def decoded_insns_backward(start_ea, end_ea = None):
         insn = insn_t()
         prev_insn_ea = decode_prev_insn(insn, insn_ea)
         if prev_insn_ea == BADADDR:
-            raise AnalException(f"Couldn't decode previous instruction at {insn_ea:x}")
+            raise AnalysisException(f"Couldn't decode previous instruction at {insn_ea:x}")
         yield DecodedInsn(insn, prev_insn_ea, insn_ea - prev_insn_ea)
         insn_ea = prev_insn_ea
 

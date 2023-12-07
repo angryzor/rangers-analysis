@@ -1,7 +1,7 @@
 import sys
 
-analmodules = [mod for mod in sys.modules if mod.startswith('analrangers')]
-for mod in analmodules:
+analysismodules = [mod for mod in sys.modules if mod.startswith('rangers_analysis')]
+for mod in analysismodules:
     del sys.modules[mod]
 
 import re
@@ -18,9 +18,9 @@ import ida_nalt
 from ida_bytes import *
 from ida_typeinf import *
 from idc import *
-from analrangers.lib.naming import nlist_names, set_generated_func_name, set_generated_name
-from analrangers.lib.funcs import require_thunk, ensure_function
-from analrangers.lib.analysis_exceptions import AnalException
+from rangers_analysis.lib.naming import nlist_names, set_generated_func_name, set_generated_name
+from rangers_analysis.lib.funcs import require_thunk, ensure_function
+from rangers_analysis.lib.analysis_exceptions import AnalysisException
 from ctypes import POINTER, c_uint
 
 if not conf.loaded:
@@ -913,7 +913,7 @@ def handle_record(type):
 
                         try:
                             set_generated_func_name(ensure_function(vfunc_ea), mangled_member_name, True)
-                        except AnalException:
+                        except AnalysisException:
                             set_generated_name(vfunc_ea, mangled_member_name, True)
 
                         discover_sdk_name(mangled_member_name, member.get_tif())
@@ -1064,7 +1064,7 @@ def apply_sdk_name(ea):
             try:
                 thunk = require_thunk(func)
                 set_generated_func_name(thunk, known.name, True)
-            except AnalException:
+            except AnalysisException:
                 set_generated_name(ea, known.name, True)
         else:
             set_generated_name(ea, known.name, True)

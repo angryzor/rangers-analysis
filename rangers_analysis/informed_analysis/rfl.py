@@ -1,13 +1,13 @@
 from ida_bytes import get_qword
 from ida_typeinf import tinfo_t
-from analrangers.lib.util import require_type, require_name_ea, require_cstr, force_apply_tinfo, force_apply_tinfo_array
-from analrangers.lib.iterators import require_unique, null_terminated_ptr_array_iterator
-from analrangers.lib.heuristics import generated_class_name, get_getter_xref
-from analrangers.lib.funcs import require_function, ensure_functions, require_thunk
-from analrangers.lib.xrefs import get_code_drefs_to, get_data_drefs_to
-from analrangers.lib.require import NotFoundException
-from analrangers.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
-from analrangers.lib.naming import set_generated_func_name, set_static_var_name, create_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
+from rangers_analysis.lib.util import require_type, require_name_ea, require_cstr, force_apply_tinfo, force_apply_tinfo_array
+from rangers_analysis.lib.iterators import require_unique, null_terminated_ptr_array_iterator
+from rangers_analysis.lib.heuristics import generated_class_name, get_getter_xref
+from rangers_analysis.lib.funcs import require_function, ensure_functions, require_thunk
+from rangers_analysis.lib.xrefs import get_code_drefs_to, get_data_drefs_to
+from rangers_analysis.lib.require import NotFoundException
+from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
+from rangers_analysis.lib.naming import set_generated_func_name, set_static_var_name, create_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
 from .report import handle_anal_exceptions
 
 rfl_type_info_tif = require_type('hh::fnd::RflTypeInfo')

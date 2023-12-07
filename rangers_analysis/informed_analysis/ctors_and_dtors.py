@@ -1,9 +1,9 @@
 # Names constructors and destructors through the vtable for all known vtables.
 
 from ida_bytes import get_qword
-from analrangers.lib.heuristics import estimate_class_name_from_vtable_name, guess_constructor_from_vtable, find_instantiator_from_constructor
-from analrangers.lib.naming import nlist_names, set_simple_constructor_func_name, set_private_instantiator_func_name, set_destructor_func_name
-from analrangers.lib.funcs import ensure_functions
+from rangers_analysis.lib.heuristics import estimate_class_name_from_vtable_name, guess_constructor_from_vtable, find_instantiator_from_constructor
+from rangers_analysis.lib.naming import nlist_names, set_simple_constructor_func_name, set_private_instantiator_func_name, set_destructor_func_name
+from rangers_analysis.lib.funcs import ensure_functions
 from .report import handle_anal_exceptions
 
 def handle_initializer(class_name, vtable_ea):

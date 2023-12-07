@@ -1,11 +1,11 @@
 from ida_bytes import get_qword
 from ida_ua import o_reg
-from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo
-from analrangers.lib.heuristics import require_constructor_thunk_from_instantiator, require_class_name_from_constructor
-from analrangers.lib.funcs import require_function, ensure_functions, find_implementation, require_thunk
-from analrangers.lib.xrefs import get_code_drefs_to
-from analrangers.lib.ua_data_extraction import read_source_op_addr_from_mem_assignment_through_single_reg, read_insn
-from analrangers.lib.naming import set_generated_func_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_initializer_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
+from rangers_analysis.lib.util import require_type, require_name_ea, force_apply_tinfo
+from rangers_analysis.lib.heuristics import require_constructor_thunk_from_instantiator, require_class_name_from_constructor
+from rangers_analysis.lib.funcs import require_function, ensure_functions, find_implementation, require_thunk
+from rangers_analysis.lib.xrefs import get_code_drefs_to
+from rangers_analysis.lib.ua_data_extraction import read_source_op_addr_from_mem_assignment_through_single_reg, read_insn
+from rangers_analysis.lib.naming import set_generated_func_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_initializer_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
 from .report import handle_anal_exceptions
 
 init_node_tif = require_type('hh::fnd::SingletonInitNode')

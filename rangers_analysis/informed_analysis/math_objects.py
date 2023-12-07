@@ -1,8 +1,8 @@
 from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags, is_dword, get_dword, calc_max_align, get_item_size, is_qword
 from ida_segment import get_segm_by_name
 from ida_typeinf import TINFO_GUESSED, idc_guess_type, tinfo_t, BTF_FLOAT
-from analrangers.lib.util import require_type, binsearch_matches, force_apply_tinfo_array, force_apply_tinfo, not_tails
-from analrangers.lib.segments import rdata_seg
+from rangers_analysis.lib.util import require_type, binsearch_matches, force_apply_tinfo_array, force_apply_tinfo, not_tails
+from rangers_analysis.lib.segments import rdata_seg
 from .report import handle_anal_exceptions
 from ctypes import cast, pointer, c_long, c_float, POINTER
 

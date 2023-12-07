@@ -1,4 +1,4 @@
-from analrangers.lib.analysis_exceptions import AnalException
+from rangers_analysis.lib.analysis_exceptions import AnalysisException
 
 manual = []
 
@@ -17,5 +17,5 @@ def report_failure(s):
 def handle_anal_exceptions(f):
     try:
         f()
-    except AnalException as e:
+    except AnalysisException as e:
         report_failure(str(e))

@@ -6,7 +6,7 @@ from ida_funcs import get_func, add_func, calc_thunk_func_target, FUNC_THUNK, ge
 from ida_idaapi import BADADDR
 from ida_frame import get_frame_size
 from .iterators import find_unique
-from .analysis_exceptions import AnalException
+from .analysis_exceptions import AnalysisException
 from .require import NotFoundException, require_wrap
 from .xrefs import get_safe_crefs_to
 
@@ -18,7 +18,7 @@ def get_function(ea):
     f = get_func(ea)
     
     if get_frame_size(f) > 0x10000:
-        raise AnalException(f'fuck denuvo at {ea:x}')
+        raise AnalysisException(f'fuck denuvo at {ea:x}')
 
     return f
 
@@ -31,7 +31,7 @@ def ensure_function(ea):
             del_items(head)
 
         if not add_func(ea):
-            raise AnalException(f'could not create func at {ea:x}')
+            raise AnalysisException(f'could not create func at {ea:x}')
         
         f = get_function(ea)
     return f
@@ -48,7 +48,7 @@ class FunctionNotFoundException(NotFoundException):
 
 require_function = require_wrap(FunctionNotFoundException, get_function)
 
-class ThunkIterationException(AnalException):
+class ThunkIterationException(AnalysisException):
     pass
 
 def get_thunk_targets(f):

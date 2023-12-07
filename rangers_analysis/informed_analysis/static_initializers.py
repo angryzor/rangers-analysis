@@ -1,10 +1,10 @@
 from ida_name import get_name
 from ida_bytes import get_qword
 from ida_ua import o_near, o_mem
-from analrangers.lib.ua_data_extraction import read_source_op_addr, read_insn
-from analrangers.lib.funcs import ensure_functions
-from analrangers.lib.util import require_name_ea
-from analrangers.lib.naming import set_generated_name
+from rangers_analysis.lib.ua_data_extraction import read_source_op_addr, read_insn
+from rangers_analysis.lib.funcs import ensure_functions
+from rangers_analysis.lib.util import require_name_ea
+from rangers_analysis.lib.naming import set_generated_name
 from .report import handle_anal_exceptions
 
 atexit_ea = require_name_ea('atexit')

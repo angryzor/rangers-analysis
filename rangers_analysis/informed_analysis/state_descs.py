@@ -1,10 +1,10 @@
-from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo
-from analrangers.lib.xrefs import get_safe_crefs_to
-from analrangers.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator
-from analrangers.lib.funcs import require_thunk, require_function, ensure_functions, find_implementation
-from analrangers.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
-from analrangers.lib.naming import set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_initializer_func_name, set_static_atexit_dtor_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name
-from analrangers.lib.require import NotFoundException
+from rangers_analysis.lib.util import require_type, require_name_ea, force_apply_tinfo
+from rangers_analysis.lib.xrefs import get_safe_crefs_to
+from rangers_analysis.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator
+from rangers_analysis.lib.funcs import require_thunk, require_function, ensure_functions, find_implementation
+from rangers_analysis.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
+from rangers_analysis.lib.naming import set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_initializer_func_name, set_static_atexit_dtor_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name
+from rangers_analysis.lib.require import NotFoundException
 from .report import handle_anal_exceptions, report_failure
 
 state_desc_tif = require_type('hh::ut::StateDesc')

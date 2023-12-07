@@ -10,7 +10,7 @@ from ida_typeinf import idc_guess_type
 from .util import get_cstr
 from .ua_data_extraction import find_insn_forward, read_insn, decoded_insns_forward, track_values
 from .xrefs import get_drefs_to, get_safe_crefs_to, get_code_drefs_to
-from .analysis_exceptions import AnalException
+from .analysis_exceptions import AnalysisException
 from .require import require_wrap, NotFoundException
 from .funcs import require_function, require_thunk, ensure_functions, find_implementation, FunctionNotFoundException
 from .iterators import require_unique, find, UniqueNotFoundException
@@ -158,7 +158,7 @@ def guess_subclass_constructors_from_constructor(f):
                 yield subf
         except FunctionNotFoundException:
             print(f'warn: ignoring {cref:x} in subconstructor search as it is not a function')
-        except AnalException as e:
+        except AnalysisException as e:
             print(f'warn: could not try {cref:x} due to analysis exception: {e}')
 
 def estimate_class_name_from_vtable_name(name):
@@ -239,11 +239,11 @@ def get_best_class_name(ctor_func, short_name_ea, category):
         return class_name, False
     
     if short_name_ea == None:
-        raise AnalException(f'Could not find a reliable short nor a vtable-based class name for constructor {ctor_func.start_ea:x}. No naming source available.')
+        raise AnalysisException(f'Could not find a reliable short nor a vtable-based class name for constructor {ctor_func.start_ea:x}. No naming source available.')
 
     name = get_cstr(short_name_ea)
     if name == None:
-        raise AnalException(f'No vtable-based class name available for constructor {ctor_func.start_ea:x}, and no short name found at {short_name_ea:x}. No naming source available.')
+        raise AnalysisException(f'No vtable-based class name available for constructor {ctor_func.start_ea:x}, and no short name found at {short_name_ea:x}. No naming source available.')
 
     return generated_class_name(name, category), True
 

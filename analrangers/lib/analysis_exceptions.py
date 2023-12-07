@@ -1,2 +1,0 @@
-class AnalException(Exception):
-    pass

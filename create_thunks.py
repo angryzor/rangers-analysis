@@ -2,7 +2,7 @@ from ida_bytes import get_full_flags
 from ida_funcs import get_func, FUNC_THUNK
 from ida_name import demangle_name
 from ida_nalt import get_imagebase
-from analrangers.lib.naming import nlist_names
+from rangers_analysis.lib.naming import nlist_names
 
 image_base = get_imagebase()
 

@@ -1,9 +1,9 @@
 from ida_bytes import get_qword
-from analrangers.lib.util import require_type, require_name_ea, force_apply_tinfo
-from analrangers.lib.heuristics import get_best_class_name, discover_class_hierarchy, get_getter_xref, find_class_object
-from analrangers.lib.funcs import require_function, ensure_functions
-from analrangers.lib.naming import set_generated_vtable_name_through_ctor, set_generated_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name
-from analrangers.lib.segments import rdata_seg
+from rangers_analysis.lib.util import require_type, require_name_ea, force_apply_tinfo
+from rangers_analysis.lib.heuristics import get_best_class_name, discover_class_hierarchy, get_getter_xref, find_class_object
+from rangers_analysis.lib.funcs import require_function, ensure_functions
+from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_generated_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name
+from rangers_analysis.lib.segments import rdata_seg
 from .report import handle_anal_exceptions
 
 class_tif = require_type('hh::fnd::ResourceTypeInfo')
