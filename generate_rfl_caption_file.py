@@ -80,7 +80,7 @@ def emit_member(captions, member_ea):
         for i in range(0, count):
             attr_arr_item_addr = attr_arr_addr + i * rfl_custom_attribute_tif.get_size()
 
-            if get_qword(attr_arr_item_addr + 0x10) == 0x1440B35F0:
+            if get_qword(attr_arr_item_addr + 0x10) == 0x1440B7710:
                 caption_addr = get_qword(attr_arr_item_addr + 8)
                 caption_str_addr = get_qword(caption_addr)
                 strlen = get_max_strlit_length(caption_str_addr, STRTYPE_C, ALOPT_IGNCLT | ALOPT_IGNHEADS)
@@ -134,7 +134,7 @@ def emit_struct(captions, rfl_class_ea):
 
 clear_report()
 
-rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x7a)
+rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x83)
 
 captions = dict()
 

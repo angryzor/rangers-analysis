@@ -157,9 +157,9 @@ def set_rfl_classes(static_initializer_eas, rfl_class_arr_ea):
 def find_rfl_statics(static_initializer_eas):
     rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 
-    rfl_type_info_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x56)
+    rfl_type_info_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x5f)
     # rfl_type_info_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x61)
-    rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x7a)
+    rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x83)
     # rfl_class_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x6d)
 
     set_rfl_types(rfl_type_info_arr_ea)
