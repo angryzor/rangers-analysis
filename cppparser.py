@@ -872,13 +872,12 @@ def handle_record(type):
             if member.kind in (CursorKind.CXX_METHOD, CursorKind.DESTRUCTOR) and member.is_virtual_method():
                 create_vfunc(member)
         
-        # Create a default destructor if none was specified and we have vtables.
+        # Create a default destructor if none was specified, we have vtables, and our primary base has a destructor.
         if len(vtbl_infos) > 0 and not any(map(lambda member: member.kind == CursorKind.DESTRUCTOR and member.is_virtual_method(), decl.get_children())):
-            vf = DefaultDtorVFunc(decl, forward_tif)
-            if is_root:
-                vtbl_infos[0].members.insert(0, vf)
-            else:
-                vtbl_infos[0].members[0] = vf
+            for i, member in enumerate(vtbl_infos[0].members):
+                if member.is_dtor():
+                    vtbl_infos[0].members[i] = DefaultDtorVFunc(decl, forward_tif)
+                    break
 
         for vtbl_info in vtbl_infos:
             vtbl_udt = idaapi.udt_type_data_t()
