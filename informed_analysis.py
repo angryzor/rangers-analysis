@@ -10,6 +10,7 @@ from rangers_analysis.informed_analysis.rfl import find_rfl_statics
 from rangers_analysis.informed_analysis.gocs import find_gocs
 from rangers_analysis.informed_analysis.managed_resources import find_managed_resources
 from rangers_analysis.informed_analysis.object_classes import find_obj_classes
+from rangers_analysis.informed_analysis.obj_infos import find_obj_infos
 from rangers_analysis.informed_analysis.state_descs import find_state_descs
 from rangers_analysis.informed_analysis.math_objects import find_common_math_objects
 from rangers_analysis.informed_analysis.singletons import find_singletons
@@ -28,12 +29,14 @@ print('=== GOC ANALYSIS ===')
 find_gocs()
 print('=== GAMEOBJECT ANALYSIS ===')
 find_obj_classes()
+print('=== OBJINFO ANALYSIS ===')
+find_obj_infos()
 print('=== STATEDESC ANALYSIS ===')
 find_state_descs(static_initializer_eas)
 print('=== MANAGED RESOURCE ANALYSIS ===')
 find_managed_resources()
 # print('=== FLOATING POINT MATH OBJECT ANALYSIS ===')
-# find_common_math_objects()
+# find_common_math_objects(static_initializer_eas)
 print('=== SINGLETON ANALYSIS ===')
 find_singletons(static_initializer_eas)
 # print('=== VTABLE BASED CTOR/DTOR ANALYSIS ===')

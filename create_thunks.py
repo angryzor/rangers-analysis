@@ -20,8 +20,7 @@ SetBaseAddress:
 
 PUBLIC GetFunctionAddress
 GetFunctionAddress:
-	mov rax, moduleOffset
-    add rax, [rcx+9]
+	mov rax, [rcx+2]
     ret
 """)
 for name, ea in nlist_names():
@@ -36,8 +35,7 @@ for name, ea in nlist_names():
     f.write(f"""
 PUBLIC {name}
 {name}:
-	mov rax, moduleOffset
-	add rax, 0{ea - image_base:x}h
+	mov rax, 0{ea:x}h
 	jmp rax
 """)
 

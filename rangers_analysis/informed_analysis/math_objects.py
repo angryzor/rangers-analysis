@@ -1,8 +1,11 @@
-from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags, is_dword, get_dword, calc_max_align, get_item_size, is_qword
+from ida_bytes import set_cmt, get_bytes, is_unknown, is_oword, get_flags, is_dword, get_dword, calc_max_align, get_item_size, is_qword, get_cmt, set_cmt
 from ida_segment import get_segm_by_name
 from ida_typeinf import TINFO_GUESSED, idc_guess_type, tinfo_t, BTF_FLOAT
 from rangers_analysis.lib.util import require_type, binsearch_matches, force_apply_tinfo_array, force_apply_tinfo, not_tails
+from rangers_analysis.lib.naming import set_generated_name
+from rangers_analysis.lib.funcs import require_function
 from rangers_analysis.lib.segments import rdata_seg
+from rangers_analysis.lib.ua_data_extraction import decoded_insns_forward
 from .report import handle_anal_exceptions
 from ctypes import cast, pointer, c_long, c_float, POINTER
 
@@ -14,6 +17,8 @@ float_tif.create_simple_type(BTF_FLOAT)
 
 numbers = {
     '0': b'\x00\x00\x00\x00',
+    '0.5': b'\x00\x00\x00\x3F',
+    '-0.5': b'\x00\x00\x00\xBF',
     '1': b'\x00\x00\x80\x3F',
     '-1': b'\x00\x00\x80\xBF',
     'pi': b'\xDB\x0F\x49\x40',
@@ -45,6 +50,9 @@ commonvectors = {
     'basis x': numbers['1'] + numbers['0'] + numbers['0'] + numbers['0'],
     'basis y': numbers['0'] + numbers['1'] + numbers['0'] + numbers['0'],
     'basis z': numbers['0'] + numbers['0'] + numbers['1'] + numbers['0'],
+    'negative basis x': numbers['-1'] + numbers['0'] + numbers['0'] + numbers['0'],
+    'negative basis y': numbers['0'] + numbers['-1'] + numbers['0'] + numbers['0'],
+    'negative basis z': numbers['0'] + numbers['0'] + numbers['-1'] + numbers['0'],
 
     # not sure about these at all
     'mirror over x axis': numbers['1'] + numbers['-1'] + numbers['-1'] + numbers['1'],
@@ -83,6 +91,8 @@ commonvectors = {
     '1 / tau xyzw': numbers['1 / tau'] + numbers['1 / tau'] + numbers['1 / tau'] + numbers['1 / tau'],
     '1 / 4 xyzw': numbers['1 / 4'] + numbers['1 / 4'] + numbers['1 / 4'] + numbers['1 / 4'],
     'nan xyzw': numbers['nan'] + numbers['nan'] + numbers['nan'] + numbers['nan'],
+    'half xyz': numbers['0.5'] + numbers['0.5'] + numbers['0.5'] + numbers['0'],
+    'negative half xyz': numbers['-0.5'] + numbers['-0.5'] + numbers['-0.5'] + numbers['0'],
     'floatprecision xyzw': numbers['floatprecision'] + numbers['floatprecision'] + numbers['floatprecision'] + numbers['floatprecision'],
 }
 
@@ -149,7 +159,28 @@ def may_convert_to_float(ea):
 def may_convert_to_v4(ea):
     return calc_max_align(ea) >= 2 and all_bytes(isunk, ea, 16) or is_oword(get_flags(ea))
 
-def find_common_math_objects():
+def percolate_static_vectors(static_initializer_eas):
+    for ea in static_initializer_eas:
+        if ea != 0:
+            initializer = require_function(ea)
+            insns = [*decoded_insns_forward(initializer.start_ea, initializer.end_ea)]
+
+            def set_cmt_and_name(vec_ea, cmt):
+                set_cmt(vec_ea, cmt, True)
+                set_generated_name(vec_ea, f'{cmt.replace(" ", "_").replace("/", "over")}_{f"{vec_ea:x}".upper()}')
+                set_generated_name(initializer.start_ea, f'vectorinitsub_{f"{ea:x}".upper()}')
+
+            if len(insns) == 3 and insns[0].mnem == 'movaps' and insns[1].mnem == 'movaps' and insns[2].mnem == 'retn':
+                cmt = get_cmt(insns[0].insn.Op2.addr, True)
+
+                if cmt != None:
+                    force_apply_tinfo(insns[1].insn.Op1.addr, v4_tif, TINFO_GUESSED)
+                    set_cmt_and_name(insns[1].insn.Op1.addr, cmt)
+            elif len(insns) == 3 and insns[0].mnem == 'xorps' and insns[1].mnem == 'movaps' and insns[2].mnem == 'retn':
+                force_apply_tinfo(insns[1].insn.Op1.addr, v4_tif, TINFO_GUESSED)
+                set_cmt_and_name(insns[1].insn.Op1.addr, "origin xyzw")
+
+def find_common_math_objects(static_initializer_eas):
     seg = get_segm_by_name(rdata_seg)
 
     print(f'info: searching for vectors in segment {rdata_seg}')
@@ -184,3 +215,6 @@ def find_common_math_objects():
 
     print(f'info: searching for special floats in segment {rdata_seg}')
     match_bytes(seg, { k: numbers[k] for k in numbers if not numbers[k].startswith(b'\x00\x00') }, float_tif, 2)
+
+    print(f'info: percolating static vectors')
+    percolate_static_vectors(static_initializer_eas)

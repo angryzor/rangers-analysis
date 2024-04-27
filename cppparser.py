@@ -1080,21 +1080,15 @@ def generate_thunks():
 
 .code
 
-PUBLIC RangersSDK_SetBaseAddress
-RangersSDK_SetBaseAddress:
-    mov moduleOffset, rcx
-    ret
-
 PUBLIC RangersSDK_GetAddress
 RangersSDK_GetAddress:
-    mov eax, dword ptr [rcx+9]
-    add rax, moduleOffset
+    mov rax, qword ptr [rcx+2]
     ret
 
 """)
     for name, ea in nlist_names():
         demangled = ida_name.demangle_name(name, 0)
-        if len(name) > 200 or name.startswith('j_') or name.startswith('??_7') or name.startswith('??_R') or not demangled:
+        if len(name) > 200 or name.startswith('j_') or name.startswith('??_7') or name.startswith('??_R') or name.startswith('??__E') or name.startswith('??__F') or not demangled:
             continue
         # func = ida_funcs.get_func(ea)
         # if not func or func.flags & ida_funcs.FUNC_THUNK or func.start_ea != ea:
@@ -1103,8 +1097,7 @@ RangersSDK_GetAddress:
         f.write(f"""
 PUBLIC {name}
 {name}:
-    mov rax, moduleOffset
-    add rax, 0{ea - image_base:x}h
+    mov rax, 0{ea:x}h
     jmp rax
 """)
 
