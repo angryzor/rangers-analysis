@@ -18,7 +18,7 @@ import ida_nalt
 from ida_bytes import *
 from ida_typeinf import *
 from idc import *
-from rangers_analysis.lib.naming import nlist_names, set_generated_func_name, set_generated_name
+from rangers_analysis.lib.naming import nlist_names, set_generated_func_name, set_generated_name, get_alias_ea, get_aliases, remove_alias
 from rangers_analysis.lib.funcs import require_thunk, ensure_function
 from rangers_analysis.lib.analysis_exceptions import AnalysisException
 from ctypes import POINTER, c_uint
@@ -368,12 +368,11 @@ def discover_sdk_name(mangled_name, type):
     apply_type_to_name(mangled_name, type)
 
 def apply_type_to_name(mangled_name, type):
-    address = get_name_ea_simple(mangled_name)
-    if address != idaapi.BADADDR:
+    if address := get_alias_ea(mangled_name):
         idaapi.apply_tinfo(address, type, idaapi.TINFO_DELAYFUNC | idaapi.TINFO_DEFINITE)
 
         thunk_name = 'j_' + mangled_name
-        if get_name_ea_simple(thunk_name) != idaapi.BADADDR:
+        if get_alias_ea(thunk_name) != None:
             apply_type_to_name(thunk_name, type)
 
 callingconv_map = {
@@ -1070,6 +1069,38 @@ def apply_sdk_name(ea):
 
         apply_type_to_name(known.name, known.tif)
 
+class ChooseAlias(ida_kernwin.Choose):
+    def __init__(self, aliases, ea):
+        self.aliases = aliases
+        self.ea = ea
+        super().__init__('Aliases', [
+            ['Short Name', 50 | ida_kernwin.Choose.CHCOL_PLAIN],
+            ['Full Name', 100 | ida_kernwin.Choose.CHCOL_PLAIN],
+        ], ida_kernwin.Choose.CH_MODAL | ida_kernwin.Choose.CH_NOBTNS | ida_kernwin.Choose.CH_CAN_DEL)
+
+    def OnGetSize(self):
+        return len(self.aliases)
+
+    def OnGetLine(self, n):
+        alias, idx = self.aliases[n]
+
+        short_demangled_name = ida_name.demangle_name(alias, ida_name.MNG_SHORT_FORM)
+        full_name = ida_name.demangle_name(alias, 0) or alias
+
+        if not short_demangled_name or not full_name:
+            return [alias, alias]
+
+        return [short_demangled_name, full_name]
+    
+    def OnDeleteLine(self, sel):
+        alias, idx = self.aliases[sel]
+        remove_alias(self.ea, alias)
+        return True, None
+
+def view_aliases(ea):
+    aliases = [*get_aliases(ea)]
+    ida_kernwin.choose_choose(ChooseAlias(aliases, ea))
+
 def generate_thunks():
     image_base = ida_nalt.get_imagebase()
 
@@ -1086,15 +1117,16 @@ RangersSDK_GetAddress:
     ret
 
 """)
-    for name, ea in nlist_names():
-        demangled = ida_name.demangle_name(name, 0)
-        if len(name) > 200 or name.startswith('j_') or name.startswith('??_7') or name.startswith('??_R') or name.startswith('??__E') or name.startswith('??__F') or not demangled:
-            continue
-        # func = ida_funcs.get_func(ea)
-        # if not func or func.flags & ida_funcs.FUNC_THUNK or func.start_ea != ea:
-        #     continue
+    for main_name, ea in nlist_names():
+        for name, idx in get_aliases(ea):
+            demangled = ida_name.demangle_name(name, 0)
+            if len(name) > 200 or name.startswith('j_') or name.startswith('??_7') or name.startswith('??_R') or name.startswith('??__E') or name.startswith('??__F') or not demangled:
+                continue
+            # func = ida_funcs.get_func(ea)
+            # if not func or func.flags & ida_funcs.FUNC_THUNK or func.start_ea != ea:
+            #     continue
 
-        f.write(f"""
+            f.write(f"""
 PUBLIC {name}
 {name}:
     mov rax, 0{ea:x}h
@@ -1108,17 +1140,33 @@ def generate_address_list():
     with open(os.path.join(API_LOCATION, 'addresses.csv'), 'w', newline='') as f:
         csvw = csv.writer(f)
         
-        for name, ea in nlist_names():
-            demangled = ida_name.demangle_name(name, 0)
-            if name not in ('atexit', 'singletonList') and not demangled:
-                continue
+        for main_name, ea in nlist_names():
+            for name, idx in get_aliases(ea):
+                demangled = ida_name.demangle_name(name, 0)
+                if name not in ('atexit', 'singletonList') and not demangled:
+                    continue
 
-            csvw.writerow([f'{ea:x}', name, int(has_user_name(get_flags(ea)))])
+                csvw.writerow([f'{ea:x}', name, int(has_user_name(get_flags(ea)))])
 
 def import_address_list():
     with open(os.path.join(API_LOCATION, 'addresses.csv'), 'r', newline='') as f:
         for row in csv.reader(f):
             set_generated_name(int(row[0], 16), row[1], row[2] == 1)
+
+def get_right_click_target_ea(ctx):
+    print(f'{ctx.cur_value:x}, {ctx.cur_extracted_ea:x}, {ctx.cur_ea:x}')
+    if ida_segment.getseg(ctx.cur_value):
+        return ctx.cur_value
+    elif ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
+        if not ctx.cur_value == BADADDR:
+            vdui = ida_hexrays.get_widget_vdui(ctx.widget)
+            treeitem = vdui.cfunc.treeitems.at(ctx.cur_value)
+            if treeitem.is_expr() and treeitem.cexpr.obj_ea != BADADDR:
+                return treeitem.cexpr.obj_ea
+        elif ctx.cur_ea != BADADDR and ida_funcs.get_func(ctx.cur_ea) and ida_funcs.get_func(ctx.cur_ea).start_ea == ctx.cur_ea:
+            return ctx.cur_ea
+
+    print('invalid target')
 
 class CPPParserActionHandler(ida_kernwin.action_handler_t):
     def __init__(self, cpp_parser):
@@ -1127,27 +1175,18 @@ class CPPParserActionHandler(ida_kernwin.action_handler_t):
 
 class ApplySDKNameActionHandler(CPPParserActionHandler):
     def activate(self, ctx):
-        def get_target_ea():
-            print(f'{ctx.cur_value:x}, {ctx.cur_extracted_ea:x}, {ctx.cur_ea:x}')
-            if ida_segment.getseg(ctx.cur_value):
-                return ctx.cur_value
-            elif ctx.widget_type == ida_kernwin.BWN_PSEUDOCODE:
-                if not ctx.cur_value == BADADDR:
-                    vdui = ida_hexrays.get_widget_vdui(ctx.widget)
-                    treeitem = vdui.cfunc.treeitems.at(ctx.cur_value)
-                    if treeitem.is_expr() and treeitem.cexpr.obj_ea != BADADDR:
-                        return treeitem.cexpr.obj_ea
-                elif ctx.cur_ea != BADADDR and ida_funcs.get_func(ctx.cur_ea) and ida_funcs.get_func(ctx.cur_ea).start_ea == ctx.cur_ea:
-                    return ctx.cur_ea
-
-            print('invalid target')
-
-        target = get_target_ea()
-
-        if target:
+        if target := get_right_click_target_ea(ctx):
             apply_sdk_name(target)
 
         ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
+class ViewAliasesActionHandler(CPPParserActionHandler):
+    def activate(self, ctx):
+        if target := get_right_click_target_ea(ctx):
+            view_aliases(target)
+
+        ida_kernwin.update_action_state('cppparser:view-aliases', ida_kernwin.AST_ENABLE_ALWAYS)
         return 0
 
 class SyncHandler(CPPParserActionHandler):
@@ -1173,6 +1212,7 @@ class CPPParserUIHooks(ida_kernwin.UI_Hooks):
     def populating_widget_popup(self, widget, popup_handle, ctx):
         if ctx.widget_type in (ida_kernwin.BWN_DISASM, ida_kernwin.BWN_PSEUDOCODE):
             ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:apply-sdk-name')
+            ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:view-aliases')
 
 class CPPParser:
     def __init__(self):
@@ -1188,9 +1228,13 @@ class CPPParser:
         ida_kernwin.register_action(generate_thunks_action)
         ida_kernwin.update_action_state('cppparser:import-addresses', ida_kernwin.AST_ENABLE_ALWAYS)
 
-        apply_sdk_name_action = ida_kernwin.action_desc_t('cppparser:apply-sdk-name', 'Apply SDK name', ApplySDKNameActionHandler(self))
+        apply_sdk_name_action = ida_kernwin.action_desc_t('cppparser:apply-sdk-name', 'Apply SDK name...', ApplySDKNameActionHandler(self))
         ida_kernwin.register_action(apply_sdk_name_action)
         ida_kernwin.update_action_state('cppparser:apply-sdk-name', ida_kernwin.AST_ENABLE_ALWAYS)
+
+        view_aliases_action = ida_kernwin.action_desc_t('cppparser:view-aliases', 'SDK aliases...', ViewAliasesActionHandler(self))
+        ida_kernwin.register_action(view_aliases_action)
+        ida_kernwin.update_action_state('cppparser:view-aliases', ida_kernwin.AST_ENABLE_ALWAYS)
 
         ida_kernwin.create_toolbar('cppparser', 'CPP Parser')
 
@@ -1213,6 +1257,7 @@ class CPPParser:
 
         ida_kernwin.delete_toolbar('cppparser')
 
+        ida_kernwin.unregister_action('cppparser:view-aliases')
         ida_kernwin.unregister_action('cppparser:apply-sdk-name')
         ida_kernwin.unregister_action('cppparser:import-addresses')
         ida_kernwin.unregister_action('cppparser:generate-thunks')
