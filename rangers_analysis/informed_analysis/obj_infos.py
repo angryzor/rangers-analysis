@@ -43,9 +43,7 @@ def handle_obj_class(obj_info_class_ea):
         set_generated_vtable_name_through_ctor(constructor, class_name)
 
 def find_obj_infos():
-    obj_info_registry_ctor_ea = require_name_ea('??0ObjInfoRegistry@game@hh@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
-
-    obj_info_class_arr_ea = read_source_op_addr(obj_info_registry_ctor_ea + 0x4f)
+    obj_info_class_arr_ea = require_name_ea('?staticObjInfoClasses@ObjInfoRegistry@game@hh@@0PAPEAVObjInfoClass@23@A')
 
     tif = tinfo_t()
     tif.create_ptr(obj_info_class_tif)

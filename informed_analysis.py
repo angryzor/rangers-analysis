@@ -4,6 +4,11 @@ analysismodules = [mod for mod in sys.modules if mod.startswith('rangers_analysi
 for mod in analysismodules:
     del sys.modules[mod]
 
+from rangers_analysis.config import configure_rangers_analysis
+from configurations import configs
+
+configure_rangers_analysis(configs['wars']['latest'])
+
 from rangers_analysis.informed_analysis.static_initializers import find_static_initializers
 from rangers_analysis.informed_analysis.services import find_services
 from rangers_analysis.informed_analysis.rfl import find_rfl_statics
@@ -35,10 +40,10 @@ print('=== STATEDESC ANALYSIS ===')
 find_state_descs(static_initializer_eas)
 print('=== MANAGED RESOURCE ANALYSIS ===')
 find_managed_resources()
-# print('=== FLOATING POINT MATH OBJECT ANALYSIS ===')
-# find_common_math_objects(static_initializer_eas)
 print('=== SINGLETON ANALYSIS ===')
 find_singletons(static_initializer_eas)
+# print('=== FLOATING POINT MATH OBJECT ANALYSIS ===')
+# find_common_math_objects(static_initializer_eas)
 # print('=== VTABLE BASED CTOR/DTOR ANALYSIS ===')
 # find_ctors_and_dtors()
 

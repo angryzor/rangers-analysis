@@ -4,7 +4,7 @@ from ida_typeinf import idc_guess_type
 from rangers_analysis.lib.util import require_type, require_name_ea, force_apply_tinfo
 from rangers_analysis.lib.heuristics import get_best_class_name, discover_class_hierarchy, get_getter_xref
 from rangers_analysis.lib.funcs import require_function, ensure_functions
-from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_generated_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name
+from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_generated_name, create_name, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, friendly_class_name, create_simple_constructor_func_name
 from rangers_analysis.lib.xrefs import get_drefs_to
 from rangers_analysis.lib.segments import data_seg
 from .report import handle_anal_exceptions
@@ -75,7 +75,7 @@ def handle_goc_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
         set_generated_vtable_name_through_ctor(ctor_func, class_name)
 
 def find_gocs():
-    base_ctor_ea = require_name_ea('??0GOComponent@game@hh@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
+    base_ctor_ea = require_name_ea(create_simple_constructor_func_name(['GOComponent', 'game', 'hh']))
     base_ctor = require_function(base_ctor_ea)
 
     for funcs in discover_class_hierarchy(base_ctor):

@@ -26,7 +26,7 @@ from ctypes import POINTER, c_uint
 if not conf.loaded:
     conf.set_library_file(os.path.join(os.path.dirname(__file__), 'libclang.dll'))
 
-API_LOCATION = os.environ['SONIC_FRONTIERS_SDK']
+API_LOCATION = os.environ['SONIC_FORCES_SDK']
 
 known_mangled_names = []
 

@@ -1,13 +1,13 @@
-from ida_bytes import bin_search, BIN_SEARCH_FORWARD
 from ida_segment import get_segm_by_name
-from ida_funcs import get_fchunk
 from rangers_analysis.lib.ua_data_extraction import read_source_op_addr_from_reg_assignment
-from rangers_analysis.lib.funcs import ensure_functions, func_parents, find_implementation, require_function, require_thunk
-from rangers_analysis.lib.heuristics import get_best_class_name, get_getter_xref, require_constructor_thunk_from_instantiator
-from rangers_analysis.lib.util import get_cstr, force_apply_tinfo, require_type
-from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
+from rangers_analysis.lib.funcs import ensure_functions, require_function, require_thunk
+from rangers_analysis.lib.heuristics import get_best_class_name, get_getter_xref, discover_class_hierarchy
+from rangers_analysis.lib.util import get_cstr, force_apply_tinfo, require_type, require_name_ea
+from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType, create_simple_constructor_func_name, set_simple_constructor_func_name
 from rangers_analysis.lib.segments import text_seg
-from .report import handle_anal_exceptions
+from rangers_analysis.lib.iterators import require_unique
+from rangers_analysis.lib.xrefs import get_code_drefs_to
+from .report import handle_anal_exceptions, AnalysisException
 
 service_class_tif = require_type('hh::game::GameServiceClass')
 
@@ -15,30 +15,33 @@ tls_seg = get_segm_by_name(text_seg)
 
 class_class_name = ['GameServiceClass', 'game', 'hh']
 
-def handle_func_parent(parent_ea):
-    parent = require_function(parent_ea)
-    parent_thunk = require_thunk(parent)
+def handle_gameservice_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func, base_ctor_func):
+    if instantiator_thunk == None:
+        raise AnalysisException(f"Can't find instantiator for {ctor_thunk.start_ea:x}")
 
-    class_ea = read_source_op_addr_from_reg_assignment(parent_ea, 1)
-    service_name_ea = read_source_op_addr_from_reg_assignment(parent_ea, 2)
-    initializer_ea = read_source_op_addr_from_reg_assignment(parent_ea, 8)
+    initializer_cref = require_unique(f"Can't find unique xref for {ctor_thunk.start_ea:x}", [*get_code_drefs_to(instantiator_thunk.start_ea)])
+    initializer_func = require_function(initializer_cref)
+    initializer_thunk = require_thunk(initializer_func)
 
-    print(f'info: handling service at {parent_ea:x}: {get_cstr(service_name_ea)}')
+    class_ea = read_source_op_addr_from_reg_assignment(initializer_func.start_ea, 1)
+    service_name_ea = read_source_op_addr_from_reg_assignment(initializer_func.start_ea, 2)
+    # initializer_ea = read_source_op_addr_from_reg_assignment(initializer_func_ea, 8)
 
-    initializer_thunk = ensure_functions(initializer_ea)
-    initializer = find_implementation(initializer_thunk)
-    constructor_thunk = require_constructor_thunk_from_instantiator(initializer)
-    constructor = find_implementation(constructor_thunk)
+    print(f'info: handling service at {initializer_func.start_ea:x}: {get_cstr(service_name_ea)}')
 
-    class_name, using_fallback_name = get_best_class_name(constructor, service_name_ea, 'services')
+    class_name, using_fallback_name = get_best_class_name(ctor_func, service_name_ea, 'services')
 
     force_apply_tinfo(class_ea, service_class_tif)
 
     class_var = StaticObjectVar('gameServiceClass', class_class_name, StaticObjectVarType.VAR, True)
 
     set_static_var_name(class_ea, class_name, class_var)
-    set_private_instantiator_func_name(initializer_thunk, class_name)
-    set_static_initializer_func_name(parent_thunk, class_name, class_var)
+    set_static_initializer_func_name(initializer_thunk, class_name, class_var)
+
+    set_private_instantiator_func_name(instantiator_thunk, class_name)
+
+    if ctor_func != instantiator_func:
+        set_simple_constructor_func_name(ctor_thunk, class_name)
 
     getter_ea = get_getter_xref(class_ea)
     if getter_ea != None:
@@ -47,19 +50,12 @@ def handle_func_parent(parent_ea):
         print(f'warn: no GetClass function found for service class at {class_ea:x}')
 
     if using_fallback_name:
-        set_generated_vtable_name_through_ctor(constructor, class_name)
+        set_generated_vtable_name_through_ctor(ctor_func, class_name)
 
 
 def find_services():
-    initialization_tail_ea = bin_search(
-        tls_seg.start_ea,
-        tls_seg.end_ea,
-        b'\x48\x89\x11\x48\x8B\xC1\x4C\x89\x41\x08\x4C\x89\x49\x10\xC3',
-        None,
-        BIN_SEARCH_FORWARD,
-        0,
-    )
+    base_ctor_ea = require_name_ea(create_simple_constructor_func_name(['GameService', 'game', 'hh']))
+    base_ctor = require_function(base_ctor_ea)
 
-    tail = get_fchunk(initialization_tail_ea)
-    for parent_ea in func_parents(tail):
-        handle_anal_exceptions(lambda: handle_func_parent(parent_ea))
+    for funcs in discover_class_hierarchy(base_ctor):
+        handle_anal_exceptions(lambda: handle_gameservice_ctor(*funcs))

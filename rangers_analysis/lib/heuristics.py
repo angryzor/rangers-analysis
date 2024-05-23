@@ -86,41 +86,44 @@ class ConstructorNotFoundException(NotFoundException):
 require_constructor_thunk_from_instantiator = require_wrap(VTableNotFoundException, guess_constructor_thunk_from_instantiator)
 
 def looks_like_instantiator(f):
-    # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
-    f = get_fchunk(f.start_ea)
+    return find_insn_forward(lambda d: d.mnem == 'call' and d.insn.Op1.addr == 0x14071B3A0, f.start_ea, f.end_ea)
 
-    # Check if we try to read out the vtable of rcx, presumably the allocator.
-    vtbl_res = find(
-        lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_phrase and i[0].insn.Op2.reg in i[1]['allocator'].regs,
-        track_values({ 'allocator': 1 }, decoded_insns_forward(f.start_ea, f.end_ea))
-    )
-    if not vtbl_res: return False
-    vtbl_insn, at_vtbl_insn_values = vtbl_res
-    after_vtbl_insn_values = { **at_vtbl_insn_values, 'alloc_vtable': vtbl_insn.insn.Op1.reg }
+# def looks_like_instantiator(f):
+#     # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
+#     f = get_fchunk(f.start_ea)
 
-    # See if we do a direct call on a displacement operand
-    displ_call_res = find(
-        lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_displ and i[0].insn.Op1.addr == 8 and i[0].insn.Op1.reg in i[1]['alloc_vtable'].regs and 1 in i[1]['allocator'].regs,
-        track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
-    )
-    if displ_call_res: return True
+#     # Check if we try to read out the vtable of rcx, presumably the allocator.
+#     vtbl_res = find(
+#         lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_phrase and i[0].insn.Op2.reg in i[1]['allocator'].regs,
+#         track_values({ 'allocator': 1 }, decoded_insns_forward(f.start_ea, f.end_ea))
+#     )
+#     if not vtbl_res: return False
+#     vtbl_insn, at_vtbl_insn_values = vtbl_res
+#     after_vtbl_insn_values = { **at_vtbl_insn_values, 'alloc_vtable': vtbl_insn.insn.Op1.reg }
 
-    # Otherwise, see if we first read out the function pointer separately and then do a call on a register
-    allocfn_res = find(
-        lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_displ and i[0].insn.Op2.addr == 8 and i[0].insn.Op2.reg in i[1]['alloc_vtable'].regs,
-        track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
-    )
-    if not allocfn_res: return False
-    allocfn_insn, at_allocfn_insn_values = allocfn_res
-    after_allocfn_insn_values = { **at_allocfn_insn_values, 'allocfn': allocfn_insn.insn.Op1.reg }
+#     # See if we do a direct call on a displacement operand
+#     displ_call_res = find(
+#         lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_displ and i[0].insn.Op1.addr == 8 and i[0].insn.Op1.reg in i[1]['alloc_vtable'].regs and 1 in i[1]['allocator'].regs,
+#         track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
+#     )
+#     if displ_call_res: return True
 
-    call_res = find(
-        lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_reg and i[0].insn.Op1.reg in i[1]['allocfn'].regs and 1 in i[1]['allocator'].regs,
-        track_values(after_allocfn_insn_values, decoded_insns_forward(allocfn_insn.ea + allocfn_insn.size, f.end_ea))
-    )
-    if call_res: return True
+#     # Otherwise, see if we first read out the function pointer separately and then do a call on a register
+#     allocfn_res = find(
+#         lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_displ and i[0].insn.Op2.addr == 8 and i[0].insn.Op2.reg in i[1]['alloc_vtable'].regs,
+#         track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
+#     )
+#     if not allocfn_res: return False
+#     allocfn_insn, at_allocfn_insn_values = allocfn_res
+#     after_allocfn_insn_values = { **at_allocfn_insn_values, 'allocfn': allocfn_insn.insn.Op1.reg }
 
-    return False
+#     call_res = find(
+#         lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_reg and i[0].insn.Op1.reg in i[1]['allocfn'].regs and 1 in i[1]['allocator'].regs,
+#         track_values(after_allocfn_insn_values, decoded_insns_forward(allocfn_insn.ea + allocfn_insn.size, f.end_ea))
+#     )
+#     if call_res: return True
+
+#     return False
 
 
     # # Find first assignment of rax

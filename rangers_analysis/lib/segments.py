@@ -1,4 +1,4 @@
-data_seg = '.trace'
-rdata_seg = '.udata'
-text_seg = '.data'
-denuvoized_text_seg = '.sxdata'
+data_seg = '.srdata'
+rdata_seg = '.tls'
+text_seg = '.xtext'
+denuvoized_text_seg = '.arch'

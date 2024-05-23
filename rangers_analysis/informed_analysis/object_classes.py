@@ -4,7 +4,7 @@ from ida_segment import getseg, get_segm_name
 from rangers_analysis.lib.funcs import ensure_functions, find_implementation, require_function
 from rangers_analysis.lib.heuristics import get_best_class_name, require_constructor_thunk_from_instantiator, discover_class_hierarchy, get_getter_xref
 from rangers_analysis.lib.util import get_cstr, require_type, force_apply_tinfo, force_apply_tinfo_array, require_name_ea
-from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVarType, StaticObjectVar, friendly_class_name
+from rangers_analysis.lib.naming import set_generated_vtable_name_through_ctor, set_private_instantiator_func_name, set_simple_constructor_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVarType, StaticObjectVar, friendly_class_name, create_simple_constructor_func_name
 from rangers_analysis.lib.ua_data_extraction import read_source_op_addr
 from rangers_analysis.lib.iterators import null_terminated_ptr_array_iterator
 from rangers_analysis.lib.xrefs import get_drefs_to
@@ -128,9 +128,7 @@ def handle_obj_ctor(instantiator_thunk, instantiator_func, ctor_thunk, ctor_func
         set_generated_vtable_name_through_ctor(ctor_func, class_name)
 
 def find_obj_classes():
-    load_go_classes_ea = require_name_ea('?LoadGameObjectClasses@GameObjectSystem@game@hh@@SAXXZ')
-
-    obj_class_arr_ea = read_source_op_addr(load_go_classes_ea + 0x12)
+    obj_class_arr_ea = require_name_ea('?staticGameObjectClasses@GameObjectRegistry@game@hh@@0PAPEAVGameObjectClass@23@A')
 
     tif = tinfo_t()
     tif.create_ptr(obj_class_tif)
@@ -140,7 +138,7 @@ def find_obj_classes():
     # for obj_class_ea in null_terminated_ptr_array_iterator(obj_class_arr_ea):
     #     handle_anal_exceptions(lambda: handle_obj_class(obj_class_ea))
 
-    base_ctor_ea = require_name_ea('??0GameObject@game@hh@@QEAA@PEAVIAllocator@fnd@csl@@@Z')
+    base_ctor_ea = require_name_ea(create_simple_constructor_func_name(['GameObject', 'game', 'hh']))
     base_ctor = require_function(base_ctor_ea)
 
     for funcs in discover_class_hierarchy(base_ctor):

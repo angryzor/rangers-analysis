@@ -155,12 +155,8 @@ def set_rfl_classes(static_initializer_eas, rfl_class_arr_ea):
         handle_anal_exceptions(lambda: handle_rfl_class(static_initializer_eas, rfl_class_ea))
 
 def find_rfl_statics(static_initializer_eas):
-    rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
-
-    rfl_type_info_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x5f)
-    # rfl_type_info_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x61)
-    rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x83)
-    # rfl_class_registry_ea = read_source_op_addr(rfl_static_setup_ea + 0x6d)
+    rfl_type_info_arr_ea = require_name_ea('?staticRflTypeInfos@RflTypeInfoRegistry@fnd@hh@@0PAPEAVRflTypeInfo@23@A')
+    rfl_class_arr_ea = require_name_ea('?staticRflClasses@RflClassNameRegistry@fnd@hh@@0PAPEAVRflClass@23@A')
 
     set_rfl_types(rfl_type_info_arr_ea)
     set_rfl_classes(static_initializer_eas, rfl_class_arr_ea)

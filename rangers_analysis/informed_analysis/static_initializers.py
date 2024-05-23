@@ -26,10 +26,8 @@ def handle_static_initializer(ea):
         set_generated_name(initializer.start_ea, f'nullinitsub_{f"{ea:x}".upper()}')
 
 def find_static_initializers():
-    __scrt_common_main_seh_ea = require_name_ea('?__scrt_common_main_seh@@YAHXZ')
-
-    initializer_list_start = read_source_op_addr(__scrt_common_main_seh_ea + 0x75)
-    initializer_list_end = read_source_op_addr(__scrt_common_main_seh_ea + 0x6e)
+    initializer_list_start = require_name_ea('staticInitializersStart')
+    initializer_list_end = require_name_ea('staticInitializersEnd')
 
     print(f'info: found static initializer list from {initializer_list_start:x} to {initializer_list_end:x}')
 

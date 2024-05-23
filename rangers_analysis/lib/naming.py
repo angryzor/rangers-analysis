@@ -3,6 +3,7 @@ from ida_name import set_name, SN_AUTO, get_nlist_size, get_nlist_name, get_nlis
 from ida_bytes import get_flags, has_user_name
 from .heuristics import require_vtable, is_rtti_identified_vtable, is_deleting_destructor, guess_vbase_destructor_thunk_from_deleting_destructor
 from .funcs import get_thunk_targets, is_stock_function, find_implementation
+from rangers_analysis.config import rangers_analysis_config
 
 def create_name(fmt, *identifiers):
     backrefs = []
@@ -73,14 +74,32 @@ def set_generated_func_name(f, name, is_certain = False):
 
         set_generated_name(f.start_ea, f"{'j_' * i}{name}", is_certain)
 
+def create_private_instantiator_func_name(class_name, func_name = 'Create'):
+    if rangers_analysis_config['pass_allocator']:
+        return create_name('?{0}@CAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl'])
+    else:
+        return create_name('?{0}@CAPEAV{1}@XZ', [func_name, *class_name], class_name)
+
+def create_public_instantiator_func_name(class_name, func_name = 'Create'):
+    if rangers_analysis_config['pass_allocator']:
+        return create_name('?{0}@SAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl'])
+    else:
+        return create_name('?{0}@SAPEAV{1}@XZ', [func_name, *class_name], class_name)
+
+def create_simple_constructor_func_name(class_name):
+    if rangers_analysis_config['pass_allocator']:
+        return create_name('??0{0}@QEAA@PEAV{1}@@Z', class_name, ['IAllocator', 'fnd', 'csl'])
+    else:
+        return create_name('??0{0}@QEAA@XZ', class_name)
+
 def set_private_instantiator_func_name(f, class_name, is_certain = False, func_name = 'Create'):
-    set_generated_func_name(f, create_name('?{0}@CAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']), is_certain)
+    set_generated_func_name(f, create_private_instantiator_func_name(class_name, func_name), is_certain)
 
 def set_public_instantiator_func_name(f, class_name, is_certain = False, func_name = 'Create'):
-    set_generated_func_name(f, create_name('?{0}@SAPEAV{1}@PEAV{2}@@Z', [func_name, *class_name], class_name, ['IAllocator', 'fnd', 'csl']), is_certain)
+    set_generated_func_name(f, create_public_instantiator_func_name(class_name, func_name), is_certain)
 
 def set_simple_constructor_func_name(f, class_name, is_certain = False):
-    set_generated_func_name(f, create_name('??0{0}@QEAA@PEAV{1}@@Z', class_name, ['IAllocator', 'fnd', 'csl']), is_certain)
+    set_generated_func_name(f, create_simple_constructor_func_name(class_name), is_certain)
 
 def set_destructor_func_name(dtor_thunk, class_name, is_certain = False):
     dtor = find_implementation(dtor_thunk)
