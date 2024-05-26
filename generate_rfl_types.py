@@ -25,36 +25,36 @@ import re
 
 # because of denuvo obfuscating some static initializers -_-
 fixed_overrides = {
-    'DetailMesh': { 'member_count': 2, 'parent': 0 },
-    'OffMeshLinkParameter': { 'member_count': 1, 'parent': 0 },
-    'Partitioning': { 'member_count': 1, 'parent': 0 },
-    'Polygonization': { 'member_count': 3, 'parent': 0 },
-    'Rasterization': { 'member_count': 2, 'parent': 0 },
-    'Region': { 'member_count': 2, 'parent': 0 },
-    'World': { 'member_count': 2, 'parent': 0 },
-    'FxBrunetonSky': { 'member_count': 19, 'parent': 0 },
-    'FxBrunetonSkyNight': { 'member_count': 8, 'parent': 0 },
-    'FxCloudBlendParameter': { 'member_count': 4, 'parent': 0 },
-    'FxCloudProcedural': { 'member_count': 4, 'parent': 0 },
-    'FxCloudShadowParameter': { 'member_count': 3, 'parent': 0 },
-    'FxCrepuscularRay': { 'member_count': 4, 'parent': 0 },
-    'FxDensityParameter': { 'member_count': 19, 'parent': 0 },
-    'FxDensityLodParameter': { 'member_count': 5, 'parent': 0 },
-    'FxDensityDebugParameter': { 'member_count': 14, 'parent': 0 },
-    'ColorDropout': { 'member_count': 6, 'parent': 0 },
-    'ColorShift': { 'member_count': 4, 'parent': 0 },
-    'DebugScreenOption': { 'member_count': 10, 'parent': 0 },
-    'FxAntiAliasing': { 'member_count': 3, 'parent': 0 },
-    'FxBloomParameter': { 'member_count': 5, 'parent': 0 },
-    'FxCameraControlParameter': { 'member_count': 3, 'parent': 0 },
-    'FxChromaticAberrationParameter': { 'member_count': 9, 'parent': 0 },
-    'FxColorAccessibilityFilterParameter': { 'member_count': 9, 'parent': 0 },
-    'FxColorContrastParameter': { 'member_count': 17, 'parent': 0 },
-    'FxCyberSpaceStartNoiseParameter': { 'member_count': 11, 'parent': 0 },
-    'FxDOFParameter': { 'member_count': 22, 'parent': 0 },
+    # 'DetailMesh': { 'member_count': 2, 'parent': 0 },
+    # 'OffMeshLinkParameter': { 'member_count': 1, 'parent': 0 },
+    # 'Partitioning': { 'member_count': 1, 'parent': 0 },
+    # 'Polygonization': { 'member_count': 3, 'parent': 0 },
+    # 'Rasterization': { 'member_count': 2, 'parent': 0 },
+    # 'Region': { 'member_count': 2, 'parent': 0 },
+    # 'World': { 'member_count': 2, 'parent': 0 },
+    # 'FxBrunetonSky': { 'member_count': 19, 'parent': 0 },
+    # 'FxBrunetonSkyNight': { 'member_count': 8, 'parent': 0 },
+    # 'FxCloudBlendParameter': { 'member_count': 4, 'parent': 0 },
+    # 'FxCloudProcedural': { 'member_count': 4, 'parent': 0 },
+    # 'FxCloudShadowParameter': { 'member_count': 3, 'parent': 0 },
+    # 'FxCrepuscularRay': { 'member_count': 4, 'parent': 0 },
+    # 'FxDensityParameter': { 'member_count': 19, 'parent': 0 },
+    # 'FxDensityLodParameter': { 'member_count': 5, 'parent': 0 },
+    # 'FxDensityDebugParameter': { 'member_count': 14, 'parent': 0 },
+    # 'ColorDropout': { 'member_count': 6, 'parent': 0 },
+    # 'ColorShift': { 'member_count': 4, 'parent': 0 },
+    # 'DebugScreenOption': { 'member_count': 10, 'parent': 0 },
+    # 'FxAntiAliasing': { 'member_count': 3, 'parent': 0 },
+    # 'FxBloomParameter': { 'member_count': 5, 'parent': 0 },
+    # 'FxCameraControlParameter': { 'member_count': 3, 'parent': 0 },
+    # 'FxChromaticAberrationParameter': { 'member_count': 9, 'parent': 0 },
+    # 'FxColorAccessibilityFilterParameter': { 'member_count': 9, 'parent': 0 },
+    # 'FxColorContrastParameter': { 'member_count': 17, 'parent': 0 },
+    # 'FxCyberSpaceStartNoiseParameter': { 'member_count': 11, 'parent': 0 },
+    # 'FxDOFParameter': { 'member_count': 22, 'parent': 0 },
 }
 
-rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
+# rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 rfl_enum_member_tif = require_type('hh::fnd::RflClassEnumMember')
 rfl_enum_tif = require_type('hh::fnd::RflClassEnum')
 rfl_class_member_tif = require_type('hh::fnd::RflClassMember')
@@ -80,16 +80,17 @@ types = {
 	16: 'TYPE_MATRIX44',
 	17: 'TYPE_POINTER',
 	18: 'TYPE_ARRAY',
-	19: 'TYPE_SIMPLE_ARRAY',
-	20: 'TYPE_ENUM',
-	21: 'TYPE_STRUCT',
-	22: 'TYPE_FLAGS',
-	23: 'TYPE_CSTRING',
-	24: 'TYPE_STRING',
-	25: 'TYPE_OBJECT_ID',
-	26: 'TYPE_POSITION',
-	27: 'TYPE_COLOR_BYTE',
-	28: 'TYPE_COLOR_FLOAT',
+    19: 'TYPE_OLD_ARRAY',
+	20: 'TYPE_SIMPLE_ARRAY',
+	21: 'TYPE_ENUM',
+	22: 'TYPE_STRUCT',
+	23: 'TYPE_FLAGS',
+	24: 'TYPE_CSTRING',
+	25: 'TYPE_STRING',
+	26: 'TYPE_OBJECT_ID',
+	27: 'TYPE_POSITION',
+	28: 'TYPE_COLOR_BYTE',
+	29: 'TYPE_COLOR_FLOAT',
 }
 
 enum_sizes = {
@@ -153,8 +154,12 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
         case 'TYPE_MATRIX44': return 'csl::math::Matrix44'
         case 'TYPE_POINTER': return 'void*'
         case 'TYPE_ARRAY': return f'csl::ut::MoveArray<{emit_type(structs, enums, member_ea, subtype)}>'
+        case 'TYPE_OLD_ARRAY': return f'csl::ut::MoveArray32<{emit_type(structs, enums, member_ea, subtype)}>'
         case 'TYPE_SIMPLE_ARRAY': return f'{emit_type(structs, enums, member_ea, subtype)}*'
         case 'TYPE_ENUM':
+            if enum_ea := get_qword(member_ea + 0x10):
+                return emit_enum(enums, enum_ea, emit_type(structs, enums, member_ea, subtype))
+
             initializer_xref = require_unique(f"Can't find an enum assigned for {member_ea:x}", [*filter(is_valid_enum_assignment_xref, get_code_drefs_to(member_ea + 0x10))])
             f = require_function(initializer_xref)
 
@@ -183,6 +188,8 @@ def emit_member(structs, enums, members, member_ea):
     typ = get_byte(member_ea + 0x18)
     subtype = get_byte(member_ea + 0x19)
     arr_len = get_dword(member_ea + 0x1C)
+
+    print(typ, subtype, arr_len)
 
     members.append(f'        {emit_type(structs, enums, member_ea, typ, subtype)} {require_cstr(get_qword(member_ea))}{f"[{arr_len}]" if arr_len != 0 else ""};\n')
 
@@ -256,7 +263,7 @@ def emit_struct(structs, rfl_class_ea):
 
 clear_report()
 
-rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x83)
+rfl_class_arr_ea = require_name_ea('?staticRflClasses@RflClassNameRegistry@fnd@hh@@0PAPEAVRflClass@23@A')
 
 structs = OrderedDict()
 
@@ -265,7 +272,8 @@ for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
     handle_anal_exceptions(lambda: emit_struct(structs, rfl_class_ea))
 
 f = open(f'rangers-rfl.h', 'w')
-f.write('namespace app::rfl {\n')
+f.write('#pragma once\n\n')
+f.write('namespace heur::rfl {\n')
 for k in structs:
     print('writing', k)
     f.write(structs[k])
