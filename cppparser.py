@@ -336,6 +336,10 @@ def get_stock_type_id(type):
                     match pointee2.kind:
                         case TypeKind.VOID | TypeKind.INVALID:
                             return None if pointee2.is_const_qualified() else STI_PPVOID
+
+        case TypeKind.NULLPTR:
+            return STI_PVOID
+
         case TypeKind.VARIABLEARRAY | TypeKind.INCOMPLETEARRAY:
             element = type.get_array_element_type()
 
@@ -665,16 +669,19 @@ def handle_member_pointer(type):
 @TypeHandler(TypeKind.TYPEDEF)
 def handle_typedef(type):
     decl = type.get_declaration()
+    decl_name = get_decl_name(decl)
     origin_tif = get_ida_type(decl.underlying_typedef_type)
     existing_type_name = origin_tif.get_type_name()
 
     if existing_type_name == None:
-        save_tinfo(origin_tif, get_decl_name(decl))
+        save_tinfo(origin_tif, decl_name)
+        return origin_tif
+    elif existing_type_name == decl_name:
         return origin_tif
     else:
         tif = idaapi.tinfo_t()
         tif.create_typedef(idati, existing_type_name)
-        save_tinfo(tif, get_decl_name(decl))
+        save_tinfo(tif, decl_name)
         return tif
 
 def is_stock_function(ea):
@@ -771,8 +778,9 @@ class DefaultDtorVFunc(VFunc):
 
 def handle_union(type):
     decl = type.get_declaration()
-    decl_name = get_decl_name(decl)
-    forward_tif = _create_forward_declaration(decl)
+    if not decl.is_anonymous():
+        decl_name = get_decl_name(decl)
+        forward_tif = _create_forward_declaration(decl)
 
     udt = idaapi.udt_type_data_t()
     udt.is_union = True
@@ -787,7 +795,8 @@ def handle_union(type):
     
     tif = idaapi.tinfo_t()
     tif.create_udt(udt, BTF_UNION)
-    save_tinfo(tif, decl_name)
+    if not decl.is_anonymous():
+        save_tinfo(tif, decl_name)
 
     return tif
 
@@ -798,8 +807,9 @@ def handle_record(type):
     if decl.kind == CursorKind.UNION_DECL:
         return handle_union(type)
 
-    decl_name = get_decl_name(decl)
-    forward_tif = _create_forward_declaration(decl)
+    if not decl.is_anonymous():
+        decl_name = get_decl_name(decl)
+        forward_tif = _create_forward_declaration(decl)
 
     process_cursor(decl)
 
@@ -861,7 +871,7 @@ def handle_record(type):
     def create_fields():
         for member in type.get_fields():
             member_udt = idaapi.udt_member_t()
-            member_udt.name = member.spelling
+            member_udt.name = "____anonymous____" if member.spelling == "" else member.spelling
             member_udt.offset = member.get_field_offsetof()
             member_udt.type = get_ida_type(member.type)
             udt.push_back(member_udt)
@@ -938,13 +948,15 @@ def handle_record(type):
     create_bases()
     create_fields()
 
-    vtable_infos[decl.hash] = vtbl_infos
+    if not decl.is_anonymous():
+        vtable_infos[decl.hash] = vtbl_infos
 
-    create_vtables()
+        create_vtables()
 
     tif = idaapi.tinfo_t()
     tif.create_udt(udt, BTF_STRUCT)
-    save_tinfo(tif, decl_name)
+    if not decl.is_anonymous():
+        save_tinfo(tif, decl_name)
 
     create_nonvirtual_methods()
 
