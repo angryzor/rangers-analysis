@@ -1123,8 +1123,8 @@ def generate_thunks():
 
 .code
 
-PUBLIC RangersSDK_GetAddress
-RangersSDK_GetAddress:
+PUBLIC WarsSDK_GetAddress
+WarsSDK_GetAddress:
     mov rax, qword ptr [rcx+2]
     ret
 
