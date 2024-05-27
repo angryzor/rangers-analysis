@@ -33,5 +33,5 @@ def require_unique(msg, it):
 def supstrs(node, tag):
     idx = node.supfirst(tag)
     while idx != BADADDR:
-        yield node.supstr(idx, tag)
+        yield node.supstr(idx, tag), idx
         idx = node.supnext(idx, tag)
