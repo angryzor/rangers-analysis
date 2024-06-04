@@ -4,94 +4,40 @@ analysismodules = [mod for mod in sys.modules if mod.startswith('rangers_analysi
 for mod in analysismodules:
     del sys.modules[mod]
 
+from rangers_analysis.config import autoconfigure_rangers_analysis
+autoconfigure_rangers_analysis()
+
+from ida_typeinf import enum_type_data_t
 from ida_bytes import get_qword, get_dword, get_byte
 from ida_funcs import get_func
 from ida_ua import o_reg
 from ida_name import get_name, get_name_ea
 from idaapi import BADADDR
+
+from rangers_analysis.config import rangers_analysis_config
+from rangers_analysis.lib.naming import friendly_class_name, create_name
 from rangers_analysis.lib.util import require_type, require_name_ea, require_cstr
 from rangers_analysis.lib.iterators import require_unique, null_terminated_ptr_array_iterator
 from rangers_analysis.lib.funcs import require_function, find_unique_thunk
 from rangers_analysis.lib.xrefs import get_code_drefs_to
 from rangers_analysis.lib.analysis_exceptions import AnalysisException
-from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment, decoded_insns_backward
+from rangers_analysis.lib.iterators import find
+from rangers_analysis.lib.heuristics import generated_class_name
+from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment, decoded_insns_backward
 from rangers_analysis.informed_analysis.report import handle_anal_exceptions, print_report, clear_report
 from rangers_analysis.informed_analysis.static_initializers import find_static_initializers
-from datetime import datetime
 from collections import OrderedDict
-import os
 import ctypes
 import re
 
-# because of denuvo obfuscating some static initializers -_-
-fixed_overrides = {
-    # 'DetailMesh': { 'member_count': 2, 'parent': 0 },
-    # 'OffMeshLinkParameter': { 'member_count': 1, 'parent': 0 },
-    # 'Partitioning': { 'member_count': 1, 'parent': 0 },
-    # 'Polygonization': { 'member_count': 3, 'parent': 0 },
-    # 'Rasterization': { 'member_count': 2, 'parent': 0 },
-    # 'Region': { 'member_count': 2, 'parent': 0 },
-    # 'World': { 'member_count': 2, 'parent': 0 },
-    # 'FxBrunetonSky': { 'member_count': 19, 'parent': 0 },
-    # 'FxBrunetonSkyNight': { 'member_count': 8, 'parent': 0 },
-    # 'FxCloudBlendParameter': { 'member_count': 4, 'parent': 0 },
-    # 'FxCloudProcedural': { 'member_count': 4, 'parent': 0 },
-    # 'FxCloudShadowParameter': { 'member_count': 3, 'parent': 0 },
-    # 'FxCrepuscularRay': { 'member_count': 4, 'parent': 0 },
-    # 'FxDensityParameter': { 'member_count': 19, 'parent': 0 },
-    # 'FxDensityLodParameter': { 'member_count': 5, 'parent': 0 },
-    # 'FxDensityDebugParameter': { 'member_count': 14, 'parent': 0 },
-    # 'ColorDropout': { 'member_count': 6, 'parent': 0 },
-    # 'ColorShift': { 'member_count': 4, 'parent': 0 },
-    # 'DebugScreenOption': { 'member_count': 10, 'parent': 0 },
-    # 'FxAntiAliasing': { 'member_count': 3, 'parent': 0 },
-    # 'FxBloomParameter': { 'member_count': 5, 'parent': 0 },
-    # 'FxCameraControlParameter': { 'member_count': 3, 'parent': 0 },
-    # 'FxChromaticAberrationParameter': { 'member_count': 9, 'parent': 0 },
-    # 'FxColorAccessibilityFilterParameter': { 'member_count': 9, 'parent': 0 },
-    # 'FxColorContrastParameter': { 'member_count': 17, 'parent': 0 },
-    # 'FxCyberSpaceStartNoiseParameter': { 'member_count': 11, 'parent': 0 },
-    # 'FxDOFParameter': { 'member_count': 22, 'parent': 0 },
-}
-
-# rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 rfl_enum_member_tif = require_type('hh::fnd::RflClassEnumMember')
 rfl_enum_tif = require_type('hh::fnd::RflClassEnum')
 rfl_class_member_tif = require_type('hh::fnd::RflClassMember')
+rfl_class_member_type_tif = require_type('hh::fnd::RflClassMember::Type')
 static_initializer_eas = find_static_initializers()
 
-types = {
-	0: 'TYPE_VOID',
-	1: 'TYPE_BOOL',
-	2: 'TYPE_SINT8',
-	3: 'TYPE_UINT8',
-	4: 'TYPE_SINT16',
-	5: 'TYPE_UINT16',
-	6: 'TYPE_SINT32',
-	7: 'TYPE_UINT32',
-	8: 'TYPE_SINT64',
-	9: 'TYPE_UINT64',
-	10: 'TYPE_FLOAT',
-	11: 'TYPE_VECTOR2',
-	12: 'TYPE_VECTOR3',
-	13: 'TYPE_VECTOR4',
-	14: 'TYPE_QUATERNION',
-	15: 'TYPE_MATRIX34',
-	16: 'TYPE_MATRIX44',
-	17: 'TYPE_POINTER',
-	18: 'TYPE_ARRAY',
-    19: 'TYPE_OLD_ARRAY',
-	20: 'TYPE_SIMPLE_ARRAY',
-	21: 'TYPE_ENUM',
-	22: 'TYPE_STRUCT',
-	23: 'TYPE_FLAGS',
-	24: 'TYPE_CSTRING',
-	25: 'TYPE_STRING',
-	26: 'TYPE_OBJECT_ID',
-	27: 'TYPE_POSITION',
-	28: 'TYPE_COLOR_BYTE',
-	29: 'TYPE_COLOR_FLOAT',
-}
+rfl_class_member_type_enum = enum_type_data_t()
+rfl_class_member_type_tif.get_enum_details(rfl_class_member_type_enum)
 
 enum_sizes = {
 	0: 0,
@@ -134,7 +80,7 @@ def emit_enum(enums, enum_ea, underlying_type = None):
     return name
 
 def emit_type(structs, enums, member_ea, typ, subtype = None):
-    match types[typ]:
+    match find(lambda e: e.value == typ, rfl_class_member_type_enum).name:
         case 'TYPE_VOID': return 'void'
         case 'TYPE_BOOL': return 'bool'
         case 'TYPE_SINT8': return 'int8_t'
@@ -189,8 +135,6 @@ def emit_member(structs, enums, members, member_ea):
     subtype = get_byte(member_ea + 0x19)
     arr_len = get_dword(member_ea + 0x1C)
 
-    print(typ, subtype, arr_len)
-
     members.append(f'        {emit_type(structs, enums, member_ea, typ, subtype)} {require_cstr(get_qword(member_ea))}{f"[{arr_len}]" if arr_len != 0 else ""};\n')
 
 
@@ -200,16 +144,19 @@ def emit_struct(structs, rfl_class_ea):
     enums = OrderedDict()
     members = []
 
-    m = re.match(r'\?rflClass@([A-Za-z]+)@rfl@app@@2VRflClass@fnd@hh@@B', get_name(rfl_class_ea))
+    m = get_name(rfl_class_ea)
 
-    if m and m.group(1) in fixed_overrides:
-        name = m.group(1)
+    if m in rangers_analysis_config['fixed_rfl_overrides']:
+        name = rangers_analysis_config['fixed_rfl_overrides'][m]['name']
         print(f'info: handling rfl class at {rfl_class_ea:x}: {name}')
 
-        parent_ea = fixed_overrides[name]['parent']
+        parent_ea = rangers_analysis_config['fixed_rfl_overrides'][m]['parent']
 
-        members_ea = get_name_ea(BADADDR, f'?rflClassMembers@{name}@rfl@app@@0QBVRflClassMember@fnd@hh@@B')
-        members_count = fixed_overrides[name]['member_count']
+        members_name = create_name('?{0}@0QBV{1}@B', ['rflClassMembers', *generated_class_name(name, 'rfl')], ['RflClassMember', 'fnd', 'hh'])
+        members_ea = get_name_ea(BADADDR, members_name)
+        if members_ea == BADADDR:
+            raise AnalysisException(f"couldn't find override class member name {members_name}")
+        members_count = rangers_analysis_config['fixed_rfl_overrides'][m]['member_count']
     else:
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
 
@@ -227,12 +174,14 @@ def emit_struct(structs, rfl_class_ea):
         members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30)
         members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38)
 
+    [cname, *namespace] = generated_class_name(name, 'rfl')
+
     if name in visited_structs:
-        return name
+        return friendly_class_name([name, *namespace])
 
     visited_structs.add(name)
 
-    if name not in fixed_overrides:
+    if m not in rangers_analysis_config['fixed_rfl_overrides']:
         # To handle unreferenced enums, we currently just skip this for the denuvo'd enums.
         for i in range(0, enums_count):
             emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
@@ -240,7 +189,8 @@ def emit_struct(structs, rfl_class_ea):
     for i in range(0, members_count):
         emit_member(structs, enums, members, members_ea + i * rfl_class_member_tif.get_size())
     
-    text = f'    struct {name}{f" : {emit_struct(structs, parent_ea)}" if parent_ea != 0 else ""} {"{"}\n'
+    text = f'namespace {friendly_class_name(namespace)} {"{"}\n'
+    text += f'    struct {name}{f" : {emit_struct(structs, parent_ea)}" if parent_ea != 0 else ""} {"{"}\n'
 
     for k in enums:
         text += enums[k]
@@ -255,11 +205,12 @@ def emit_struct(structs, rfl_class_ea):
     text += f'        static void Construct({name}* pInstance, csl::fnd::IAllocator* pAllocator);\n'
     text += f'        static void Finish({name}* pInstance);\n'
     text += f'        static void Clean({name}* pInstance);\n'
-    text +=  '    };\n\n'
+    text +=  '    };\n'
+    text +=  '}\n\n'
 
     structs[name] = text
 
-    return name
+    return friendly_class_name([name, *namespace])
 
 clear_report()
 
@@ -273,11 +224,9 @@ for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
 
 f = open(f'rangers-rfl.h', 'w')
 f.write('#pragma once\n\n')
-f.write('namespace heur::rfl {\n')
 for k in structs:
     print('writing', k)
     f.write(structs[k])
-f.write('}\n')
 f.close()
 
 print_report()

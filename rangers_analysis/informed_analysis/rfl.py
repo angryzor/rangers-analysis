@@ -6,7 +6,7 @@ from rangers_analysis.lib.heuristics import generated_class_name, get_getter_xre
 from rangers_analysis.lib.funcs import require_function, ensure_functions, require_thunk
 from rangers_analysis.lib.xrefs import get_code_drefs_to, get_data_drefs_to
 from rangers_analysis.lib.require import NotFoundException
-from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
+from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
 from rangers_analysis.lib.naming import set_generated_func_name, set_static_var_name, create_name, set_static_initializer_func_name, set_static_getter_func_name, set_static_var_name, StaticObjectVar, StaticObjectVarType
 from .report import handle_anal_exceptions
 
@@ -27,19 +27,19 @@ def set_rfl_type(type_info_ea):
     force_apply_tinfo(type_info_ea, rfl_type_info_tif)
 
     name = require_cstr(get_qword(type_info_ea))
-    class_name = generated_class_name(name, 'rfl', 'app')
+    class_name = generated_class_name(name, 'rfl')
 
     print(f'info: handling RflTypeInfo at {type_info_ea:x}: {name}')
 
-    set_static_var_name(type_info_ea, class_name, StaticObjectVar('typeInfo', rfl_type_info_class_name, StaticObjectVarType.VAR, True, True), True)
+    set_static_var_name(type_info_ea, class_name, StaticObjectVar('typeInfo', rfl_type_info_class_name, StaticObjectVarType.VAR, True, True), certain=True, unique=True)
 
     constructor_ea = get_qword(type_info_ea + 0x10)
     finisher_ea = get_qword(type_info_ea + 0x18)
     cleaner_ea = get_qword(type_info_ea + 0x20)
 
-    set_generated_func_name(ensure_functions(constructor_ea), create_name('?{0}@CAXPEAU{1}@PEAV{2}@@Z', ['Construct', *class_name], class_name, ['IAllocator', 'fnd', 'csl']), True)
-    set_generated_func_name(ensure_functions(finisher_ea), create_name('?{0}@CAXPEAU{1}@@Z', ['Finish', *class_name], class_name), True)
-    set_generated_func_name(ensure_functions(cleaner_ea), create_name('?{0}@CAXPEAU{1}@@Z', ['Clean', *class_name], class_name), True)
+    set_generated_func_name(ensure_functions(constructor_ea), create_name('?{0}@CAXPEAU{1}@PEAV{2}@@Z', ['Construct', *class_name], class_name, ['IAllocator', 'fnd', 'csl']), certain=True)
+    set_generated_func_name(ensure_functions(finisher_ea), create_name('?{0}@CAXPEAU{1}@@Z', ['Finish', *class_name], class_name), certain=True)
+    set_generated_func_name(ensure_functions(cleaner_ea), create_name('?{0}@CAXPEAU{1}@@Z', ['Clean', *class_name], class_name), certain=True)
 
 def handle_rfl_enum_members(enum_members_ea, count):
     force_apply_tinfo_array(enum_members_ea, rfl_enum_member_tif, count)
@@ -92,8 +92,8 @@ def handle_rfl_class(static_initializer_eas, rfl_class_ea):
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
     except NotFoundException as e:
         force_apply_tinfo(rfl_class_ea, rfl_class_tif)
-        class_name = generated_class_name(f'unk_{f"{rfl_class_ea:x}".upper()}', 'rfl', 'app')
-        set_static_var_name(rfl_class_ea, class_name, class_var)
+        class_name = generated_class_name(f'unk_{f"{rfl_class_ea:x}".upper()}', 'rfl')
+        set_static_var_name(rfl_class_ea, class_name, class_var, unique=True)
         raise e
 
     initializer_func = require_function(rfl_class_cref)
@@ -105,36 +105,36 @@ def handle_rfl_class(static_initializer_eas, rfl_class_ea):
     force_apply_tinfo(rfl_class_ea, rfl_class_tif)
 
     name = require_cstr(name_ea)
-    class_name = generated_class_name(name, 'rfl', 'app')
+    class_name = generated_class_name(name, 'rfl')
 
     print(f'info: handling RflClass at {rfl_class_ea:x}: {name}')
 
-    set_static_var_name(rfl_class_ea, class_name, class_var, True)
-    set_static_initializer_func_name(initializer_thunk, class_name, class_var, True)
+    set_static_var_name(rfl_class_ea, class_name, class_var, certain=True, unique=True)
+    set_static_initializer_func_name(initializer_thunk, class_name, class_var, certain=True, unique=True)
 
     getter_ea = get_getter_xref(rfl_class_ea)
     if getter_ea != None:
-        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass', True)
-    
-    enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20, initializer_func.end_ea)
-    enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28, initializer_func.end_ea)
-    
+        set_static_getter_func_name(ensure_functions(getter_ea), class_name, class_var, 'GetClass', certain=True)
+        
     members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30, initializer_func.end_ea)
     members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38, initializer_func.end_ea)
 
-    handle_rfl_enums(enums_ea, enums_count)
-    handle_rfl_members(members_ea, members_count)
+    if members_ea != 0 and members_count != 0:
+        handle_rfl_members(members_ea, members_count)
+        members_var = StaticObjectVar('rflClassMembers', rfl_class_member_class_name, StaticObjectVarType.ARRAY, True)
+        set_static_var_name(members_ea, class_name, members_var, certain=True, unique=True)
 
-    enums_var = StaticObjectVar('rflClassEnums', rfl_class_enum_class_name, StaticObjectVarType.ARRAY, True)
-    members_var = StaticObjectVar('rflClassMembers', rfl_class_member_class_name, StaticObjectVarType.ARRAY, True)
+    enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20, initializer_func.end_ea)
+    enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28, initializer_func.end_ea)
 
-    set_static_var_name(enums_ea, class_name, enums_var, True)
-    set_static_var_name(members_ea, class_name, members_var, True)
+    if enums_ea != 0 and enums_count != 0:
+        handle_rfl_enums(enums_ea, enums_count)
+        enums_var = StaticObjectVar('rflClassEnums', rfl_class_enum_class_name, StaticObjectVarType.ARRAY, True)
+        set_static_var_name(enums_ea, class_name, enums_var, certain=True, unique=True)
 
-    if enums_count != 0:
         enum_ptr_ea = require_unique(f"Can't find an enum assignment for {enums_ea:x}", get_data_drefs_to(enums_ea))
         members_initializer = require_function(require_unique(f"Can't find an enum assignment for {enums_ea:x}", [*filter(lambda xref: xref in static_initializer_eas, get_code_drefs_to(enum_ptr_ea))]))
-        set_static_initializer_func_name(members_initializer, class_name, members_var, True)
+        set_static_initializer_func_name(members_initializer, class_name, members_var, certain=True, unique=True)
 
 def set_rfl_types(rfl_type_info_arr_ea):
     tif = tinfo_t()

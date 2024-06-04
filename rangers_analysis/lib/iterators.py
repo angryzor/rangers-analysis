@@ -30,8 +30,14 @@ class UniqueNotFoundException(NotFoundException):
 def require_unique(msg, it):
     return require(UniqueNotFoundException, find_unique(it), msg)
 
-def supstrs(node, tag):
-    idx = node.supfirst(tag)
+def supstrs(node, *args):
+    idx = node.supfirst(*args)
     while idx != BADADDR:
-        yield node.supstr(idx, tag), idx
-        idx = node.supnext(idx, tag)
+        yield node.supstr(idx, *args), idx
+        idx = node.supnext(idx, *args)
+
+def hashvals(node, *args):
+    idx = node.hashfirst(*args)
+    while idx != None:
+        yield node.hashval_long(idx, *args), idx
+        idx = node.hashnext(idx, *args)

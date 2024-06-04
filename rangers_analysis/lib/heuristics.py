@@ -1,7 +1,7 @@
 import re
 from ida_name import get_name
 from ida_segment import get_segm_name, getseg
-from ida_ua import print_insn_mnem, o_phrase, o_displ, o_reg, o_mem, o_near, o_imm
+from ida_ua import print_insn_mnem, o_phrase, o_reg, o_mem, o_near, o_imm
 from ida_bytes import get_qword, get_flags, is_code, has_user_name, is_strlit
 from ida_idaapi import BADADDR
 from ida_funcs import get_func, get_fchunk
@@ -14,7 +14,8 @@ from .analysis_exceptions import AnalysisException
 from .require import require_wrap, NotFoundException
 from .funcs import require_function, require_thunk, ensure_functions, find_implementation, FunctionNotFoundException
 from .iterators import require_unique, find, UniqueNotFoundException
-from .segments import rdata_seg, data_seg
+from .segments import rdata_seg
+from rangers_analysis.config import rangers_analysis_config
 
 def guess_vtable_from_constructor(f):
     # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
@@ -85,62 +86,7 @@ class ConstructorNotFoundException(NotFoundException):
 
 require_constructor_thunk_from_instantiator = require_wrap(VTableNotFoundException, guess_constructor_thunk_from_instantiator)
 
-def looks_like_instantiator(f):
-    return find_insn_forward(lambda d: d.mnem == 'call' and d.insn.Op1.addr == 0x14071B3A0, f.start_ea, f.end_ea)
-
-# def looks_like_instantiator(f):
-#     # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
-#     f = get_fchunk(f.start_ea)
-
-#     # Check if we try to read out the vtable of rcx, presumably the allocator.
-#     vtbl_res = find(
-#         lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_phrase and i[0].insn.Op2.reg in i[1]['allocator'].regs,
-#         track_values({ 'allocator': 1 }, decoded_insns_forward(f.start_ea, f.end_ea))
-#     )
-#     if not vtbl_res: return False
-#     vtbl_insn, at_vtbl_insn_values = vtbl_res
-#     after_vtbl_insn_values = { **at_vtbl_insn_values, 'alloc_vtable': vtbl_insn.insn.Op1.reg }
-
-#     # See if we do a direct call on a displacement operand
-#     displ_call_res = find(
-#         lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_displ and i[0].insn.Op1.addr == 8 and i[0].insn.Op1.reg in i[1]['alloc_vtable'].regs and 1 in i[1]['allocator'].regs,
-#         track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
-#     )
-#     if displ_call_res: return True
-
-#     # Otherwise, see if we first read out the function pointer separately and then do a call on a register
-#     allocfn_res = find(
-#         lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_displ and i[0].insn.Op2.addr == 8 and i[0].insn.Op2.reg in i[1]['alloc_vtable'].regs,
-#         track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
-#     )
-#     if not allocfn_res: return False
-#     allocfn_insn, at_allocfn_insn_values = allocfn_res
-#     after_allocfn_insn_values = { **at_allocfn_insn_values, 'allocfn': allocfn_insn.insn.Op1.reg }
-
-#     call_res = find(
-#         lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_reg and i[0].insn.Op1.reg in i[1]['allocfn'].regs and 1 in i[1]['allocator'].regs,
-#         track_values(after_allocfn_insn_values, decoded_insns_forward(allocfn_insn.ea + allocfn_insn.size, f.end_ea))
-#     )
-#     if call_res: return True
-
-#     return False
-
-
-    # # Find first assignment of rax
-    # alloc_assign = find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.type == o_reg and d.insn.Op1.reg == 0 and d.insn.Op2.type == o_phrase and d.insn.Op2.reg == 1, f.start_ea, f.end_ea)
-    # if not alloc_assign: return False
-
-    # # Find first call
-    # call = find_insn_forward(lambda d: d.mnem == 'call' and d.insn.Op1.type == o_displ and d.insn.Op1.reg == 0, alloc_assign.ea + alloc_assign.size, f.end_ea)
-    # if not call: return False
-
-    # # Make sure rcx is not reassigned between func start and call
-    # if find_insn_forward(lambda d: (d.mnem == 'mov' or d.mnem == 'lea') and d.insn.Op1.type == o_reg and d.insn.Op1.reg == 1, f.start_ea, call.ea): return False
-
-    # # Make sure rax is not reassigned between assignment and call
-    # if find_insn_forward(lambda d: (d.mnem == 'mov' or d.mnem == 'lea') and d.insn.Op1.type == o_reg and d.insn.Op1.reg == 0, alloc_assign.ea + alloc_assign.size, call.ea): return False
-
-    # return True
+looks_like_instantiator = rangers_analysis_config['heuristics']['looks_like_instantiator']
 
 def guess_instantiator_from_constructor(f):
     if looks_like_instantiator(f):
@@ -233,8 +179,8 @@ def is_rtti_identified_vtable(ea):
 
     return get_qword(col_ea) != BADADDR and get_name(col_ea) == '??_R4' + existing_name[4:]
 
-def generated_class_name(name, category, prefix = 'heur'):
-    return [name, category, prefix]
+def generated_class_name(name, category):
+    return [name, *rangers_analysis_config['namespaces'][category][name]] if category in rangers_analysis_config['namespaces'] and name in rangers_analysis_config['namespaces'][category] else [name, category, 'heur']
 
 def get_best_class_name(ctor_func, short_name_ea, category):
     class_name = ctor_func and estimate_class_name_from_constructor(ctor_func)

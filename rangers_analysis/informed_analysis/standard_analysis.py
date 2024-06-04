@@ -7,7 +7,6 @@ from rangers_analysis.informed_analysis.object_classes import find_obj_classes
 from rangers_analysis.informed_analysis.obj_infos import find_obj_infos
 from rangers_analysis.informed_analysis.state_descs import find_state_descs
 from rangers_analysis.informed_analysis.singletons import find_singletons
-from rangers_analysis.informed_analysis.report import clear_report, print_report
 
 def run_standard_analysis():
     static_initializer_eas = find_static_initializers()
@@ -22,9 +21,9 @@ def run_standard_analysis():
     find_obj_classes()
     print('=== OBJINFO ANALYSIS ===')
     find_obj_infos()
-    print('=== STATEDESC ANALYSIS ===')
-    find_state_descs(static_initializer_eas)
     print('=== MANAGED RESOURCE ANALYSIS ===')
     find_managed_resources()
+    print('=== STATEDESC ANALYSIS ===')
+    find_state_descs(static_initializer_eas)
     print('=== SINGLETON ANALYSIS ===')
     find_singletons(static_initializer_eas)

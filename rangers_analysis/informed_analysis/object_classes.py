@@ -39,10 +39,12 @@ def handle_obj_class(obj_class_ea):
     if member_value_count != 0 and member_value_array_ea != 0:
         force_apply_tinfo_array(member_value_array_ea, rfl_member_value_tif, member_value_count)
 
-    class_members_var = StaticObjectVar('gameObjectClassMembers', rflclass_member_value_class_name, StaticObjectVarType.ARRAY, True)
+        class_members_var = StaticObjectVar('gameObjectClassMembers', rflclass_member_value_class_name, StaticObjectVarType.ARRAY, True)
+        
+        set_static_var_name(member_value_array_ea, class_name, class_members_var)
+
     class_var = StaticObjectVar('gameObjectClass', class_class_name, StaticObjectVarType.VAR, True)
 
-    set_static_var_name(member_value_array_ea, class_name, class_members_var)
     set_static_var_name(obj_class_ea, class_name, class_var)
 
     set_private_instantiator_func_name(instantiator_thunk, class_name)
@@ -135,11 +137,11 @@ def find_obj_classes():
 
     force_apply_tinfo_array(obj_class_arr_ea, tif, len(list(null_terminated_ptr_array_iterator(obj_class_arr_ea))) + 1)
 
-    # for obj_class_ea in null_terminated_ptr_array_iterator(obj_class_arr_ea):
-    #     handle_anal_exceptions(lambda: handle_obj_class(obj_class_ea))
-
     base_ctor_ea = require_name_ea(create_simple_constructor_func_name(['GameObject', 'game', 'hh']))
     base_ctor = require_function(base_ctor_ea)
 
     for funcs in discover_class_hierarchy(base_ctor):
         handle_anal_exceptions(lambda: handle_obj_ctor(*funcs))
+
+    for obj_class_ea in null_terminated_ptr_array_iterator(obj_class_arr_ea):
+        handle_anal_exceptions(lambda: handle_obj_class(obj_class_ea))

@@ -4,59 +4,28 @@ analysismodules = [mod for mod in sys.modules if mod.startswith('rangers_analysi
 for mod in analysismodules:
     del sys.modules[mod]
 
-from ida_bytes import get_qword, get_dword, get_byte, get_max_strlit_length, ALOPT_IGNCLT, ALOPT_IGNHEADS, del_items, create_strlit
-from ida_funcs import get_func
-from ida_ua import o_reg
+from rangers_analysis.config import autoconfigure_rangers_analysis
+autoconfigure_rangers_analysis()
+
+from ida_bytes import get_qword, get_byte, get_max_strlit_length, ALOPT_IGNCLT, ALOPT_IGNHEADS, del_items, create_strlit
 from ida_name import get_name, get_name_ea
 from ida_nalt import STRTYPE_C
 from idaapi import BADADDR
+
+from rangers_analysis.config import rangers_analysis_config
+from rangers_analysis.lib.naming import create_name
 from rangers_analysis.lib.util import require_type, require_name_ea, require_cstr
 from rangers_analysis.lib.iterators import require_unique, null_terminated_ptr_array_iterator
-from rangers_analysis.lib.funcs import require_function, find_unique_thunk
+from rangers_analysis.lib.funcs import require_function
 from rangers_analysis.lib.xrefs import get_code_drefs_to
 from rangers_analysis.lib.analysis_exceptions import AnalysisException
-from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment, decoded_insns_backward
+from rangers_analysis.lib.heuristics import generated_class_name
+from rangers_analysis.lib.ua_data_extraction import read_insn, read_source_op_addr, read_source_op_addr_from_reg_assignment, read_source_op_addr_from_mem_assignment_through_single_reg, read_source_op_imm_from_mem_assignment
 from rangers_analysis.informed_analysis.report import handle_anal_exceptions, print_report, clear_report
 from rangers_analysis.informed_analysis.static_initializers import find_static_initializers
-from datetime import datetime
-from collections import OrderedDict
-import os
-import ctypes
 import re
 import csv
 
-# because of denuvo obfuscating some static initializers -_-
-fixed_overrides = {
-    'DetailMesh': { 'member_count': 2, 'parent': 0 },
-    'OffMeshLinkParameter': { 'member_count': 1, 'parent': 0 },
-    'Partitioning': { 'member_count': 1, 'parent': 0 },
-    'Polygonization': { 'member_count': 3, 'parent': 0 },
-    'Rasterization': { 'member_count': 2, 'parent': 0 },
-    'Region': { 'member_count': 2, 'parent': 0 },
-    'World': { 'member_count': 2, 'parent': 0 },
-    'FxBrunetonSky': { 'member_count': 19, 'parent': 0 },
-    'FxBrunetonSkyNight': { 'member_count': 8, 'parent': 0 },
-    'FxCloudBlendParameter': { 'member_count': 4, 'parent': 0 },
-    'FxCloudProcedural': { 'member_count': 4, 'parent': 0 },
-    'FxCloudShadowParameter': { 'member_count': 3, 'parent': 0 },
-    'FxCrepuscularRay': { 'member_count': 4, 'parent': 0 },
-    'FxDensityParameter': { 'member_count': 19, 'parent': 0 },
-    'FxDensityLodParameter': { 'member_count': 5, 'parent': 0 },
-    'FxDensityDebugParameter': { 'member_count': 14, 'parent': 0 },
-    'ColorDropout': { 'member_count': 6, 'parent': 0 },
-    'ColorShift': { 'member_count': 4, 'parent': 0 },
-    'DebugScreenOption': { 'member_count': 10, 'parent': 0 },
-    'FxAntiAliasing': { 'member_count': 3, 'parent': 0 },
-    'FxBloomParameter': { 'member_count': 5, 'parent': 0 },
-    'FxCameraControlParameter': { 'member_count': 3, 'parent': 0 },
-    'FxChromaticAberrationParameter': { 'member_count': 9, 'parent': 0 },
-    'FxColorAccessibilityFilterParameter': { 'member_count': 9, 'parent': 0 },
-    'FxColorContrastParameter': { 'member_count': 17, 'parent': 0 },
-    'FxCyberSpaceStartNoiseParameter': { 'member_count': 11, 'parent': 0 },
-    'FxDOFParameter': { 'member_count': 22, 'parent': 0 },
-}
-
-rfl_static_setup_ea = require_name_ea('?Instantiate@BuiltinTypeRegistry@fnd@hh@@SAPEAV123@XZ')
 rfl_custom_attribute_tif = require_type('hh::fnd::RflCustomAttribute')
 rfl_class_member_tif = require_type('hh::fnd::RflClassMember')
 static_initializer_eas = find_static_initializers()
@@ -80,7 +49,7 @@ def emit_member(captions, member_ea):
         for i in range(0, count):
             attr_arr_item_addr = attr_arr_addr + i * rfl_custom_attribute_tif.get_size()
 
-            if get_qword(attr_arr_item_addr + 0x10) == 0x1440B7710:
+            if get_qword(attr_arr_item_addr + 0x10) == rangers_analysis_config['caption_string_addr']:
                 caption_addr = get_qword(attr_arr_item_addr + 8)
                 caption_str_addr = get_qword(caption_addr)
                 strlen = get_max_strlit_length(caption_str_addr, STRTYPE_C, ALOPT_IGNCLT | ALOPT_IGNHEADS)
@@ -97,16 +66,19 @@ def emit_member(captions, member_ea):
 visited_structs = set()
 
 def emit_struct(captions, rfl_class_ea):
-    m = re.match(r'\?rflClass@([A-Za-z]+)@rfl@app@@2VRflClass@fnd@hh@@B', get_name(rfl_class_ea))
+    m = get_name(rfl_class_ea)
 
-    if m and m.group(1) in fixed_overrides:
-        name = m.group(1)
+    if m in rangers_analysis_config['fixed_rfl_overrides']:
+        name = rangers_analysis_config['fixed_rfl_overrides'][m]['name']
         print(f'info: handling rfl class at {rfl_class_ea:x}: {name}')
 
-        parent_ea = fixed_overrides[name]['parent']
+        parent_ea = rangers_analysis_config['fixed_rfl_overrides'][m]['parent']
 
-        members_ea = get_name_ea(BADADDR, f'?rflClassMembers@{name}@rfl@app@@0QBVRflClassMember@fnd@hh@@B')
-        members_count = fixed_overrides[name]['member_count']
+        members_name = create_name('?{0}@0QBV{1}@B', ['rflClassMembers', *generated_class_name(name, 'rfl')], ['RflClassMember', 'fnd', 'hh'])
+        members_ea = get_name_ea(BADADDR, members_name)
+        if members_ea == BADADDR:
+            raise AnalysisException(f"couldn't find override class member name {members_name}")
+        members_count = rangers_analysis_config['fixed_rfl_overrides'][m]['member_count']
     else:
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
 
@@ -134,7 +106,7 @@ def emit_struct(captions, rfl_class_ea):
 
 clear_report()
 
-rfl_class_arr_ea = read_source_op_addr(rfl_static_setup_ea + 0x83)
+rfl_class_arr_ea = require_name_ea('?staticRflClasses@RflClassNameRegistry@fnd@hh@@0PAPEAVRflClass@23@A')
 
 captions = dict()
 

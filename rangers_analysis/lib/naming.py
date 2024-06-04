@@ -1,10 +1,10 @@
 from enum import Enum
-from ida_name import get_name, set_name, SN_AUTO, get_nlist_size, get_nlist_name, get_nlist_ea, demangle_name
+from ida_name import get_name, set_name, SN_AUTO, get_nlist_size, get_nlist_name, get_nlist_ea, get_name_ea
 from ida_bytes import get_flags, has_user_name
 from ida_netnode import netnode, BADNODE
 from .heuristics import require_vtable, is_rtti_identified_vtable, is_deleting_destructor, guess_vbase_destructor_thunk_from_deleting_destructor
 from .funcs import get_thunk_targets, is_stock_function, find_implementation
-from .iterators import supstrs
+from .iterators import supstrs, hashvals
 from rangers_analysis.config import rangers_analysis_config
 
 def create_name(fmt, *identifiers):
@@ -65,23 +65,28 @@ itag = 'I'
 backref_node = '$ alias backrefs'
 netnode(backref_node).create(backref_node)
 
+def get_all_aliases():
+    return hashvals(netnode(backref_node))
+
 def set_alias_ea(alias, ea):
-    b = netnode(backref_node)
-    b.hashset_idx(alias, ea)
+    netnode(backref_node).hashset_idx(alias, ea)
 
 def del_alias_ea(alias):
-    b = netnode(backref_node)
-    b.hashdel(alias)
+    netnode(backref_node).hashdel(alias)
 
 def get_aliases(ea):
     return supstrs(netnode(ea), itag)
 
-def add_alias(ea, alias):
+def add_alias(ea, alias, steal = False):
     if backref := get_alias_ea(alias):
-        if ea != backref:
-            print(f"warn: can't add alias '{alias}' to byte {ea:x} because the name is already used in the program at {backref:x}.")
+        if ea == backref:
+            return
         
-        return
+        if not steal:
+            print(f"warn: can't add alias '{alias}' to byte {ea:x} because the name is already used in the program at {backref:x}.")
+            return
+        
+        remove_alias(backref, alias)
 
     n = netnode(ea)
     idx = n.suplast(itag)
@@ -100,23 +105,39 @@ def get_alias_ea(alias):
 
     return None if backref == 0 else backref
 
-def set_generated_name(ea, name, is_certain = False):
-    if is_certain:
+def set_main_name(ea, name, steal = False, **kwargs):
+    if steal:
+        prev_ea = get_name_ea(name)
+        if prev_ea != BADADDR and prev_ea != ea:
+            set_name(prev_ea, "")
+    set_name(ea, name, **kwargs)
+
+def remove_other_aliases(ea, name):
+    for alias, i in [*get_aliases(ea)]:
+        if alias != name:
+            remove_alias(ea, alias)
+
+def set_generated_name(ea, name, certain = False, steal = False, unique = False):
+    if certain:
+        if unique:
+            remove_other_aliases(ea, name)
         set_name(ea, name)
-        add_alias(ea, name)
+        add_alias(ea, name, steal)
     elif not has_user_name(get_flags(ea)):
+        if unique:
+            remove_other_aliases(ea, name)
         set_name(ea, name, SN_AUTO)
-        add_alias(ea, name)
+        add_alias(ea, name, steal)
     else:
         print(f'warn: Not updating name at {ea:x} to {name} as the existing name is user specified and the new name is not certain.')
         add_alias(ea, get_name(ea))
 
-def set_generated_func_name(f, name, is_certain = False):
+def set_generated_func_name(f, name, **kwargs):
     for i, f in reversed([*enumerate(reversed([*get_thunk_targets(f)]))]):
         if is_stock_function(f):
             break
 
-        set_generated_name(f.start_ea, f"{'j_' * i}{name}", is_certain)
+        set_generated_name(f.start_ea, f"{'j_' * i}{name}", **kwargs)
 
 def create_private_instantiator_func_name(class_name, func_name = 'Create'):
     if rangers_analysis_config['pass_allocator']:
@@ -136,39 +157,39 @@ def create_simple_constructor_func_name(class_name):
     else:
         return create_name('??0{0}@QEAA@XZ', class_name)
 
-def set_private_instantiator_func_name(f, class_name, is_certain = False, func_name = 'Create'):
-    set_generated_func_name(f, create_private_instantiator_func_name(class_name, func_name), is_certain)
+def set_private_instantiator_func_name(f, class_name, func_name = 'Create', **kwargs):
+    set_generated_func_name(f, create_private_instantiator_func_name(class_name, func_name), **kwargs)
 
-def set_public_instantiator_func_name(f, class_name, is_certain = False, func_name = 'Create'):
-    set_generated_func_name(f, create_public_instantiator_func_name(class_name, func_name), is_certain)
+def set_public_instantiator_func_name(f, class_name, func_name = 'Create', **kwargs):
+    set_generated_func_name(f, create_public_instantiator_func_name(class_name, func_name), **kwargs)
 
-def set_simple_constructor_func_name(f, class_name, is_certain = False):
-    set_generated_func_name(f, create_simple_constructor_func_name(class_name), is_certain)
+def set_simple_constructor_func_name(f, class_name, **kwargs):
+    set_generated_func_name(f, create_simple_constructor_func_name(class_name), **kwargs)
 
-def set_destructor_func_name(dtor_thunk, class_name, is_certain = False):
+def set_destructor_func_name(dtor_thunk, class_name, **kwargs):
     dtor = find_implementation(dtor_thunk)
 
     if is_deleting_destructor(dtor):
-        set_generated_func_name(dtor_thunk, create_name('??_G{0}@QEAAXXZ', class_name), is_certain)
+        set_generated_func_name(dtor_thunk, create_name('??_G{0}@QEAAXXZ', class_name), **kwargs)
         
         if base_dtor_thunk := guess_vbase_destructor_thunk_from_deleting_destructor(dtor):
-            set_generated_func_name(base_dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name), is_certain)
+            set_generated_func_name(base_dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name), **kwargs)
     else:
-        set_generated_func_name(dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name), is_certain)
+        set_generated_func_name(dtor_thunk, create_name('??_D{0}@QEAAXXZ', class_name), **kwargs)
 
-def set_static_getter_func_name(f, class_name, object_var, getter_name, is_certain = False):
+def set_static_getter_func_name(f, class_name, object_var, getter_name, **kwargs):
     qual = 'B' if object_var.const else 'A'
     strtyp = 'U' if object_var.struct else 'V'
-    set_generated_func_name(f, create_name('?{0}@SAPE' + qual + strtyp + '{1}@XZ', [getter_name, *class_name], object_var.class_name), is_certain)
+    set_generated_func_name(f, create_name('?{0}@SAPE' + qual + strtyp + '{1}@XZ', [getter_name, *class_name], object_var.class_name), **kwargs)
 
-def set_static_initializer_func_name(f, class_name, object_var, is_certain = False):
-    set_generated_func_name(f, create_name(f'??__E{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), is_certain)
+def set_static_initializer_func_name(f, class_name, object_var, **kwargs):
+    set_generated_func_name(f, create_name(f'??__E{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), **kwargs)
 
-def set_static_atexit_dtor_func_name(f, class_name, object_var, is_certain = False):
-    set_generated_func_name(f, create_name(f'??__F{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), is_certain)
+def set_static_atexit_dtor_func_name(f, class_name, object_var, **kwargs):
+    set_generated_func_name(f, create_name(f'??__F{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), **kwargs)
 
-def set_static_var_name(ea, class_name, object_var, is_certain = False):
-    set_generated_name(ea, create_name(f'?{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), is_certain)
+def set_static_var_name(ea, class_name, object_var, **kwargs):
+    set_generated_name(ea, create_name(f'?{object_var.get_mangling_format()}', [object_var.name, *class_name], object_var.class_name), **kwargs)
 
 def friendly_class_name(class_name):
     return "::".join(reversed(class_name))
