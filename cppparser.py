@@ -10,6 +10,7 @@ autoconfigure_rangers_analysis()
 import re
 import os
 import csv
+import cProfile
 from clang.cindex import Index, CursorKind, TypeKind, BaseEnumeration, conf, TranslationUnit, _CXString, Cursor, register_function
 import idaapi
 import ida_name
@@ -18,6 +19,7 @@ import ida_kernwin
 import ida_segment
 import ida_hexrays
 import ida_nalt
+from ida_netnode import netnode
 from ida_bytes import *
 from ida_typeinf import *
 from idc import *
@@ -71,6 +73,7 @@ known_mangled_names = []
 # Cursor.cxx_manglings = cxx_manglings
 
 register_function(conf.lib, ('clang_Cursor_getMicrosoftVFTableMangling', [Cursor, POINTER(Cursor), c_uint], _CXString, _CXString.from_result), False)
+register_function(conf.lib, ('clang_Cursor_getODRHash', [Cursor], c_uint), False)
 
 def get_mangled_vtable_name(self, base_path = []):
     base_path_size = len(base_path)
@@ -78,6 +81,11 @@ def get_mangled_vtable_name(self, base_path = []):
     return conf.lib.clang_Cursor_getMicrosoftVFTableMangling(self, base_path_arr, base_path_size)
 
 Cursor.get_mangled_vtable_name = get_mangled_vtable_name
+
+def get_odr_hash(self):
+    return conf.lib.clang_Cursor_getODRHash(self)
+
+Cursor.get_odr_hash = get_odr_hash
 
 def parse_usr(usr):
     initial_usr = usr
@@ -250,9 +258,18 @@ def parse_usr(usr):
     parse_re(r'[^@]*')
     return parse_decl()
 
+decl_name_cache = dict()
+
 def get_decl_name(decl):
     usr = decl.get_usr()
+
+    if usr in decl_name_cache:
+        return decl_name_cache[usr] 
+    
     parsed = parse_usr(usr)
+
+    decl_name_cache[usr] = parsed
+
     return parsed
 
 class CallingConv(BaseEnumeration):
@@ -379,9 +396,10 @@ class KnownMangledName:
         self.name = name
         self.tif = tif
 
-def discover_sdk_name(mangled_name, type):
+def discover_sdk_name(mangled_name, type, apply_type = False):
     known_mangled_names.append(KnownMangledName(mangled_name, type))
-    apply_type_to_name(mangled_name, type)
+    if apply_type:
+        apply_type_to_name(mangled_name, type)
 
 def apply_type_to_name(mangled_name, type):
     if address := get_alias_ea(mangled_name):
@@ -402,6 +420,27 @@ callingconv_map = {
 visited = dict()
 vtable_infos = dict()
 saved = set()
+
+def get_existing_tif(decl_name):
+    existing_tif = idaapi.tinfo_t()
+    return existing_tif if existing_tif.get_named_type(idati, decl_name) else None
+
+tif_ordinal_odr_hash_netnode = '$ tif ordinal odr hashes'
+netnode(tif_ordinal_odr_hash_netnode).create(tif_ordinal_odr_hash_netnode)
+
+def get_tif_odr(tif):
+    return netnode(tif_ordinal_odr_hash_netnode).altval(tif.get_ordinal())
+
+def set_tif_odr(tif, odr):
+    netnode(tif_ordinal_odr_hash_netnode).altset(tif.get_ordinal(), odr)
+
+def is_same_odr_hash(decl, tif):
+    new_odr = decl.get_odr_hash()
+    existing_odr = get_tif_odr(tif)
+    return existing_odr != 0 and existing_odr == new_odr
+
+def set_tif_for_odr_hash(decl, tif):
+    set_tif_odr(tif, decl.get_odr_hash())
 
 class VTableInfo:
     def __init__(self, base_path, members, offset, unshifted_class_tif):
@@ -682,6 +721,15 @@ def handle_member_pointer(type):
 def handle_typedef(type):
     decl = type.get_declaration()
     decl_name = get_decl_name(decl)
+
+    existing_tif = get_existing_tif(decl_name)
+    canonical_type = type.get_canonical()
+    canonical_decl = canonical_type.get_declaration()
+    if existing_tif and canonical_type.kind in (TypeKind.RECORD, TypeKind.ENUM) and canonical_decl.kind != CursorKind.NO_DECL_FOUND:
+        existing_canonical_tif = get_existing_tif(get_decl_name(canonical_decl))
+        if existing_canonical_tif and is_same_odr_hash(canonical_decl, existing_canonical_tif):
+            return existing_tif
+
     origin_tif = get_ida_type(decl.underlying_typedef_type)
     existing_type_name = origin_tif.get_type_name()
 
@@ -788,11 +836,9 @@ class DefaultDtorVFunc(VFunc):
 
         return tif
 
-def handle_union(type):
+def handle_union(type, type_updated, forward_tif):
     decl = type.get_declaration()
-    if not decl.is_anonymous():
-        decl_name = get_decl_name(decl)
-        forward_tif = _create_forward_declaration(decl)
+    decl_name = get_decl_name(decl)
 
     udt = idaapi.udt_type_data_t()
     udt.is_union = True
@@ -805,23 +851,35 @@ def handle_union(type):
         member_udt.type = get_ida_type(member.type)
         udt.push_back(member_udt)
     
-    tif = idaapi.tinfo_t()
-    tif.create_udt(udt, BTF_UNION)
-    if not decl.is_anonymous():
-        save_tinfo(tif, decl_name)
+    if type_updated:
+        tif = idaapi.tinfo_t()
+        tif.create_udt(udt, BTF_UNION)
+        if not decl.is_anonymous():
+            save_tinfo(tif, decl_name)
 
-    return tif
+        return tif
+    else:
+        return forward_tif
 
 @TypeHandler(TypeKind.RECORD)
 def handle_record(type):
     decl = type.get_declaration()
-
-    if decl.kind == CursorKind.UNION_DECL:
-        return handle_union(type)
+    type_updated = True
+    forward_tif = None
 
     if not decl.is_anonymous():
         decl_name = get_decl_name(decl)
-        forward_tif = _create_forward_declaration(decl)
+        existing_tif = get_existing_tif(decl_name)
+        if existing_tif and is_same_odr_hash(decl, existing_tif):
+            visited[decl.hash] = existing_tif
+            forward_tif = existing_tif
+            type_updated = False
+        else:
+            forward_tif = _create_forward_declaration(decl)
+            set_tif_for_odr_hash(decl, forward_tif)
+
+    if decl.kind == CursorKind.UNION_DECL:
+        return handle_union(type, type_updated, forward_tif)
 
     process_cursor(decl)
 
@@ -888,6 +946,27 @@ def handle_record(type):
             member_udt.type = get_ida_type(member.type)
             udt.push_back(member_udt)
 
+    def create_vtable_type(vtbl_info):
+        vtbl_udt = idaapi.udt_type_data_t()
+        vtbl_udt.taudt_bits |= TAUDT_VFTABLE
+
+        for member in vtbl_info.members:
+            method_ptr_tif = idaapi.tinfo_t()
+            method_ptr_tif.create_ptr(member.get_tif())
+
+            member_udt = idaapi.udt_member_t()
+            member_udt.name = member.get_name()
+            member_udt.type = method_ptr_tif
+
+            vtbl_udt.push_back(member_udt)
+
+        vtbl_tif = idaapi.tinfo_t()
+        vtbl_tif.create_udt(vtbl_udt, BTF_STRUCT)
+        vtbl_name = f'{decl_name}_vtbl' if vtbl_info.offset == 0 else f'{decl_name}_{vtbl_info.offset:04x}_vtbl'
+        save_tinfo(vtbl_tif, vtbl_name)
+
+        return vtbl_tif
+
     def create_vtables():
         for member in decl.get_children():
             if member.kind in (CursorKind.CXX_METHOD, CursorKind.DESTRUCTOR) and member.is_virtual_method():
@@ -901,30 +980,16 @@ def handle_record(type):
                     break
 
         for vtbl_info in vtbl_infos:
-            vtbl_udt = idaapi.udt_type_data_t()
-            vtbl_udt.taudt_bits |= TAUDT_VFTABLE
-
-            for member in vtbl_info.members:
-                method_ptr_tif = idaapi.tinfo_t()
-                method_ptr_tif.create_ptr(member.get_tif())
-
-                member_udt = idaapi.udt_member_t()
-                member_udt.name = member.get_name()
-                member_udt.type = method_ptr_tif
-
-                vtbl_udt.push_back(member_udt)
-
-            vtbl_tif = idaapi.tinfo_t()
-            vtbl_tif.create_udt(vtbl_udt, BTF_STRUCT)
-            vtbl_name = f'{decl_name}_vtbl' if vtbl_info.offset == 0 else f'{decl_name}_{vtbl_info.offset:04x}_vtbl'
-            save_tinfo(vtbl_tif, vtbl_name)
+            if type_updated:
+                vtbl_tif = create_vtable_type(vtbl_info)
+            else:
+                vtbl_tif = get_existing_tif(f'{decl_name}_vtbl' if vtbl_info.offset == 0 else f'{decl_name}_{vtbl_info.offset:04x}_vtbl')
 
             mangled_vtable_name = decl.get_mangled_vtable_name(vtbl_info.base_path)
             print(f'Trying to set vtable name {mangled_vtable_name}')
-            discover_sdk_name(mangled_vtable_name, vtbl_tif)
-
-            vtbl_ea = ida_name.get_name_ea(BADADDR, mangled_vtable_name)
-            if vtbl_ea != BADADDR:
+            discover_sdk_name(mangled_vtable_name, vtbl_tif, type_updated)
+            
+            if vtbl_ea := get_alias_ea(mangled_vtable_name):
                 for i, member in enumerate(vtbl_info.members):
                     vfunc_ea = ida_bytes.get_qword(vtbl_ea + 8 * i)
 
@@ -936,7 +1001,7 @@ def handle_record(type):
                         except AnalysisException:
                             set_generated_name(vfunc_ea, mangled_member_name, certain=True, steal=True)
 
-                        discover_sdk_name(mangled_member_name, member.get_tif())
+                        discover_sdk_name(mangled_member_name, member.get_tif(), type_updated)
 
             if is_root:
                 vtbl_ptr_tif = idaapi.tinfo_t()
@@ -952,7 +1017,7 @@ def handle_record(type):
     def create_nonvirtual_methods():
         for member in decl.get_children():
             if member.kind in (CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR, CursorKind.DESTRUCTOR) and not member.is_virtual_method():
-                discover_sdk_name(member.mangled_name, resolve_function(member.type, 0, None if member.is_static_method() else forward_tif, member))
+                discover_sdk_name(member.mangled_name, resolve_function(member.type, 0, None if member.is_static_method() else forward_tif, member), type_updated)
 
     # if not type.is_pod():
     udt.taudt_bits |= TAUDT_CPPOBJ
@@ -965,10 +1030,13 @@ def handle_record(type):
 
         create_vtables()
 
-    tif = idaapi.tinfo_t()
-    tif.create_udt(udt, BTF_STRUCT)
-    if not decl.is_anonymous():
-        save_tinfo(tif, decl_name)
+    if type_updated:
+        tif = idaapi.tinfo_t()
+        tif.create_udt(udt, BTF_STRUCT)
+        if not decl.is_anonymous():
+            save_tinfo(tif, decl_name)
+    else:
+        tif = forward_tif
 
     create_nonvirtual_methods()
 
@@ -979,6 +1047,10 @@ def handle_enum(type):
     decl = type.get_declaration()
     decl_name = get_decl_name(decl)
     is_scoped = decl.is_scoped_enum()
+
+    existing_tif = get_existing_tif(decl_name)
+    if existing_tif and is_same_odr_hash(decl, existing_tif):
+        return existing_tif
 
     etd = enum_type_data_t(BTE_ALWAYS | (BTE_SIZE_MASK & (1 << type.get_size() - 1)))
 
@@ -993,6 +1065,8 @@ def handle_enum(type):
     tif = idaapi.tinfo_t()
     tif.create_enum(etd)
     save_tinfo(tif, decl_name)
+
+    set_tif_for_odr_hash(decl, tif)
 
     return tif
 
@@ -1018,7 +1092,7 @@ def handle_struct(item):
 def typedefs(item):
     type = get_ida_type(item.type)
 
-    discover_sdk_name(item.mangled_name, type)
+    discover_sdk_name(item.mangled_name, type, True)
 
 
 @CursorHandler(CursorKind.NAMESPACE)
@@ -1026,6 +1100,11 @@ def typedefs(item):
 @CursorHandler(CursorKind.UNEXPOSED_DECL)
 def linkage(item):
     process_cursor(item)
+
+def clear_ctx():
+    visited.clear()
+    vtable_infos.clear()
+    saved.clear()
 
 def parse_file(path, args=[]):
     index = Index.create()
@@ -1035,9 +1114,11 @@ def parse_file(path, args=[]):
         for diagnostic in tx.diagnostics:
             print(f'diag: {diagnostic}')
     else:
+        clear_ctx()
         known_mangled_names.clear()
         process_cursor(tx.cursor)
         # garbage_collect()
+        clear_ctx()
 
 def process_cursor(cursor):
     for item in cursor.get_children():
@@ -1165,14 +1246,14 @@ def generate_thunks():
     image_base = ida_nalt.get_imagebase()
 
     f = open(os.path.join(API_LOCATION, 'src', 'thunks.asm'), 'w')
-    f.write("""
+    f.write(f"""
 .data
     moduleOffset dq 0
 
 .code
 
-PUBLIC WarsSDK_GetAddress
-WarsSDK_GetAddress:
+PUBLIC {rangers_analysis_config['sdk_prefix']}_GetAddress
+{rangers_analysis_config['sdk_prefix']}_GetAddress:
     mov rax, qword ptr [rcx+2]
     ret
 

@@ -25,20 +25,20 @@ while ida_ua.print_insn_mnem(cur_ea) == 'mov':
         print(f'No name for addr {source_addr:x}')
         continue
     else:
-        ida_name.set_name(dest_addr, f'{source_name}Tls')
+        ida_name.set_name(dest_addr, f'{source_name}_0')
 
-    typ = ida_typeinf.idc_get_type_raw(source_addr)
+    # typ = ida_typeinf.idc_get_type_raw(source_addr)
 
-    if typ == None:
-        print(f'No type for addr {source_addr:x}')
-        continue
-    else:
-        (bt1, bt2) = typ
+    # if typ == None:
+    #     print(f'No type for addr {source_addr:x}')
+    #     continue
+    # else:
+    #     (bt1, bt2) = typ
 
-        source_tinfo = ida_typeinf.tinfo_t()
-        source_tinfo.deserialize(None, bt1, bt2)
+    #     source_tinfo = ida_typeinf.tinfo_t()
+    #     source_tinfo.deserialize(None, bt1, bt2)
 
-        new_tinfo = ida_typeinf.tinfo_t()
-        new_tinfo.create_ptr(source_tinfo)
+    #     new_tinfo = ida_typeinf.tinfo_t()
+    #     new_tinfo.create_ptr(source_tinfo)
 
-        ida_typeinf.apply_tinfo(dest_addr, new_tinfo, ida_typeinf.TINFO_STRICT)
+    #     ida_typeinf.apply_tinfo(dest_addr, new_tinfo, ida_typeinf.TINFO_STRICT)

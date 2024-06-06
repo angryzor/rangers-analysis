@@ -50,6 +50,7 @@ available_configs = {
     'rangers': {
         '1.41': {
             'sdk_env_var': 'SONIC_FRONTIERS_SDK',
+            'sdk_prefix': 'RangersSDK',
             'segments': {
                 'data': '.trace',
                 'rdata': '.udata',
@@ -258,6 +259,7 @@ available_configs = {
     'wars': {
         'latest': {
             'sdk_env_var': 'SONIC_FORCES_SDK',
+            'sdk_prefix': 'WarsSDK',
             'segments': {
                 'data': '.srdata',
                 'rdata': '.tls',
