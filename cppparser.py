@@ -1001,7 +1001,7 @@ def handle_record(type):
                         except AnalysisException:
                             set_generated_name(vfunc_ea, mangled_member_name, certain=True, steal=True)
 
-                        discover_sdk_name(mangled_member_name, member.get_tif(), type_updated)
+                        discover_sdk_name(mangled_member_name, member.get_tif(), True)
 
             if is_root:
                 vtbl_ptr_tif = idaapi.tinfo_t()
