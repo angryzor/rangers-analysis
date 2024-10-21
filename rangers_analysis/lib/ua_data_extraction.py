@@ -1,4 +1,5 @@
 from ida_idaapi import BADADDR
+from ida_bytes import is_code, get_full_flags, get_byte
 from ida_ua import insn_t, decode_insn, decode_prev_insn, print_insn_mnem, o_reg, o_displ
 from .iterators import find
 from .analysis_exceptions import AnalysisException
@@ -15,7 +16,7 @@ class DecodedInsn:
 
 def decoded_insns_forward(start_ea, end_ea = None):
     insn_ea = start_ea
-    while end_ea == None or insn_ea < end_ea:
+    while (is_code(get_full_flags(insn_ea)) or get_byte(insn_ea) == 0x90) and (end_ea == None or insn_ea < end_ea):
         insn = insn_t()
         insn_size = decode_insn(insn, insn_ea)
         if insn_size == 0:

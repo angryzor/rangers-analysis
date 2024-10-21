@@ -1,5 +1,7 @@
 from ida_bytes import get_qword
 from ida_typeinf import tinfo_t
+from ida_name import get_ea_name
+from rangers_analysis.config import rangers_analysis_config
 from rangers_analysis.lib.util import require_type, require_name_ea, require_cstr, force_apply_tinfo, force_apply_tinfo_array
 from rangers_analysis.lib.iterators import require_unique, null_terminated_ptr_array_iterator
 from rangers_analysis.lib.heuristics import generated_class_name, get_getter_xref
@@ -152,7 +154,9 @@ def set_rfl_classes(static_initializer_eas, rfl_class_arr_ea):
     force_apply_tinfo_array(rfl_class_arr_ea, tif, len(list(null_terminated_ptr_array_iterator(rfl_class_arr_ea))) + 1)
 
     for rfl_class_ea in null_terminated_ptr_array_iterator(rfl_class_arr_ea):
-        handle_anal_exceptions(lambda: handle_rfl_class(static_initializer_eas, rfl_class_ea))
+        class_name = get_ea_name(rfl_class_ea)
+        if not class_name or class_name not in rangers_analysis_config['fixed_rfl_overrides']:
+            handle_anal_exceptions(lambda: handle_rfl_class(static_initializer_eas, rfl_class_ea))
 
 def find_rfl_statics(static_initializer_eas):
     rfl_type_info_arr_ea = require_name_ea('?staticRflTypeInfos@RflTypeInfoRegistry@fnd@hh@@0PAPEAVRflTypeInfo@23@A')

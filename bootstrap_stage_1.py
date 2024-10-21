@@ -12,7 +12,11 @@ from rangers_analysis.fixups.fix_functions import fix_functions
 from rangers_analysis.fixups.find_strings import find_strings
 from rangers_analysis.lib.segments import rdata_seg, text_seg, denuvoized_text_seg
 
-find_offsets(rdata_seg)
-fix_functions(rdata_seg, text_seg)
-fix_functions(rdata_seg, denuvoized_text_seg)
-find_strings(rdata_seg)
+from ida_segment import get_segm_by_name
+
+# find_offsets(get_segm_by_name(rdata_seg))
+# if denuvoized_text_seg:
+#     fix_functions(get_segm_by_name(rdata_seg), get_segm_by_name(text_seg))
+#     fix_functions(get_segm_by_name(rdata_seg), get_segm_by_name(denuvoized_text_seg))
+# find_strings(get_segm_by_name(rdata_seg))
+find_offsets(get_segm_by_name(rdata_seg))

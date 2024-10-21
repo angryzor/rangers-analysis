@@ -2,7 +2,7 @@ import itertools
 from ida_ua import print_insn_mnem
 from ida_name import get_name
 from ida_bytes import get_bytes, get_item_head, del_items
-from ida_funcs import get_func, add_func, calc_thunk_func_target, FUNC_THUNK, get_func, func_parent_iterator_t
+from ida_funcs import get_func, add_func, calc_thunk_func_target, FUNC_THUNK, func_parent_iterator_t, getn_func, get_func_qty
 from ida_idaapi import BADADDR
 from ida_frame import get_frame_size
 from .iterators import find_unique
@@ -21,6 +21,10 @@ def get_function(ea):
         raise AnalysisException(f'fuck denuvo at {ea:x}')
 
     return f
+
+def get_all_functions():
+   for i in range(get_func_qty()):
+        yield getn_func(i)
 
 def ensure_function(ea):
     f = get_func(ea)
