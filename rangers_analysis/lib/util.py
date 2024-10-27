@@ -1,4 +1,4 @@
-from ida_bytes import get_strlit_contents, del_items, bin_search, BIN_SEARCH_FORWARD, calc_max_align, next_not_tail, next_head, is_head, get_flags
+from ida_bytes import get_strlit_contents, del_items, bin_search, BIN_SEARCH_FORWARD, calc_max_align, next_not_tail, next_head, is_head, get_flags, get_byte
 from ida_typeinf import apply_tinfo, TINFO_DEFINITE, tinfo_t, get_idati, BTF_TYPEDEF
 from ida_nalt import STRTYPE_C
 from ida_idaapi import BADADDR
@@ -6,6 +6,9 @@ from ida_name import get_name_ea, demangle_name
 from .require import NotFoundException, require_wrap, require
 
 def get_cstr(ea):
+    if get_byte(ea) == 0:
+        return ''
+
     b = get_strlit_contents(ea, -1, STRTYPE_C)
 
     return b and b.decode('utf-8')

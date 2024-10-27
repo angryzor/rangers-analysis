@@ -129,7 +129,7 @@ def handle_rfl_class(static_initializer_eas, rfl_class_ea):
     enums_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x20, initializer_func.end_ea)
     enums_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x28, initializer_func.end_ea)
 
-    if enums_ea != 0 and enums_count != 0:
+    if members_ea != 0 and members_count != 0 and enums_ea != 0 and enums_count != 0:
         handle_rfl_enums(enums_ea, enums_count)
         enums_var = StaticObjectVar('rflClassEnums', rfl_class_enum_class_name, StaticObjectVarType.ARRAY, True)
         set_static_var_name(enums_ea, class_name, enums_var, certain=True, unique=True)

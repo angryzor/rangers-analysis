@@ -12,6 +12,9 @@
 * Place the `.sig` file in IDA's `sig/pc` folder.
 * In the new database: Load File -> FLIRT Signature -> SonicFrontiers
 
+## Run bootstrap stage 1
+* Run `bootstrap_stage_1.py`.
+
 ## Object system registries
 ### Tag the GameObjectClass array.
 * Go to the `app::MyApplication` vtable.
@@ -66,9 +69,6 @@
 * Find the GameService vtable and tag its constructor
     * wars: `??0GameService@game@hh@@QEAA@XZ`
     * rangers+: `??0GameService@game@hh@@QEAA@PEAVIAllocator@fnd@csl@@@Z`
-
-## Run bootstrap stage 1
-* Run `bootstrap_stage_1.py`.
 
 ## If imported tags, reinit aliases
 * Run `reinit_aliases.py`.

@@ -175,6 +175,9 @@ def emit_struct(structs, rfl_class_ea):
         members_ea = read_source_op_addr_from_mem_assignment_through_single_reg(initializer_func_ea, 0x30)
         members_count = read_source_op_imm_from_mem_assignment(initializer_func_ea, 0x38)
 
+        # if members_count == 0:
+        #     raise AnalysisException(f"denuvo being denuvo at {rfl_class_ea:x}")
+
     if name in visited_structs:
         return name
 

@@ -25,5 +25,5 @@ def run_standard_analysis():
     find_managed_resources()
     print('=== STATEDESC ANALYSIS ===')
     find_state_descs(static_initializer_eas)
-    print('=== SINGLETON ANALYSIS ===')
-    find_singletons(static_initializer_eas)
+    # print('=== SINGLETON ANALYSIS ===')
+    # find_singletons(static_initializer_eas)

@@ -103,6 +103,9 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
         case 'TYPE_OLD_ARRAY': return f'csl::ut::MoveArray32<{emit_type(structs, enums, member_ea, subtype)}>'
         case 'TYPE_SIMPLE_ARRAY': return f'{emit_type(structs, enums, member_ea, subtype)}*'
         case 'TYPE_ENUM':
+            if member_ea in rangers_analysis_config['fixed_rfl_enum_assignments']:
+                return emit_enum(enums, rangers_analysis_config['fixed_rfl_enum_assignments'][member_ea], emit_type(structs, enums, member_ea, subtype))
+
             if enum_ea := get_qword(member_ea + 0x10):
                 return emit_enum(enums, enum_ea, emit_type(structs, enums, member_ea, subtype))
 
@@ -127,8 +130,8 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
         case 'TYPE_STRING': return 'csl::ut::VariableString'
         case 'TYPE_OBJECT_ID': return 'hh::game::ObjectId'
         case 'TYPE_POSITION': return 'csl::math::Vector3'
-        case 'TYPE_COLOR_BYTE': return 'csl::ut::Color<uint8_t>'
-        case 'TYPE_COLOR_FLOAT': return 'csl::ut::Color<float>'
+        case 'TYPE_COLOR_BYTE': return 'csl::ut::Color8'
+        case 'TYPE_COLOR_FLOAT': return 'csl::ut::Colorf'
 
 def emit_member(structs, enums, members, member_ea):
     typ = get_byte(member_ea + 0x18)
@@ -152,11 +155,18 @@ def emit_struct(structs, rfl_class_ea):
 
         parent_ea = rangers_analysis_config['fixed_rfl_overrides'][m]['parent']
 
+        enums_count = rangers_analysis_config['fixed_rfl_overrides'][m]['enum_count']
+        if enums_count > 0:
+            enums_name = create_name('?{0}@0QBV{1}@B', ['rflClassEnums', *generated_class_name(name, 'rfl')], ['RflClassEnum', 'fnd', 'hh'])
+            enums_ea = get_name_ea(BADADDR, enums_name)
+            if enums_ea == BADADDR:
+                raise AnalysisException(f"couldn't find override class enum name {enums_name}")
+
+        members_count = rangers_analysis_config['fixed_rfl_overrides'][m]['member_count']
         members_name = create_name('?{0}@0QBV{1}@B', ['rflClassMembers', *generated_class_name(name, 'rfl')], ['RflClassMember', 'fnd', 'hh'])
         members_ea = get_name_ea(BADADDR, members_name)
         if members_ea == BADADDR:
             raise AnalysisException(f"couldn't find override class member name {members_name}")
-        members_count = rangers_analysis_config['fixed_rfl_overrides'][m]['member_count']
     else:
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
 
@@ -181,10 +191,8 @@ def emit_struct(structs, rfl_class_ea):
 
     visited_structs.add(name)
 
-    if m not in rangers_analysis_config['fixed_rfl_overrides']:
-        # To handle unreferenced enums, we currently just skip this for the denuvo'd enums.
-        for i in range(0, enums_count):
-            emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
+    for i in range(0, enums_count):
+        emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
     
     for i in range(0, members_count):
         emit_member(structs, enums, members, members_ea + i * rfl_class_member_tif.get_size())
