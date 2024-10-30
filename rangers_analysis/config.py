@@ -1,50 +1,6 @@
 from ida_nalt import retrieve_input_file_sha256
-from ida_funcs import get_fchunk
-from ida_ua import o_phrase, o_displ, o_reg
-from rangers_analysis.lib.ua_data_extraction import find_insn_forward, track_values, decoded_insns_forward
-from rangers_analysis.lib.iterators import find
 
 rangers_analysis_config = None
-
-def looks_like_instantiator_wars(f):
-    return find_insn_forward(lambda d: d.mnem == 'call' and d.insn.Op1.addr in rangers_analysis_config['allocator_addresses'], f.start_ea, f.end_ea)
-
-def looks_like_instantiator_rangers(f):
-    # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
-    f = get_fchunk(f.start_ea)
-
-    # Check if we try to read out the vtable of rcx, presumably the allocator.
-    vtbl_res = find(
-        lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_phrase and i[0].insn.Op2.reg in i[1]['allocator'].regs,
-        track_values({ 'allocator': 1 }, decoded_insns_forward(f.start_ea, f.end_ea))
-    )
-    if not vtbl_res: return False
-    vtbl_insn, at_vtbl_insn_values = vtbl_res
-    after_vtbl_insn_values = { **at_vtbl_insn_values, 'alloc_vtable': vtbl_insn.insn.Op1.reg }
-
-    # See if we do a direct call on a displacement operand
-    displ_call_res = find(
-        lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_displ and i[0].insn.Op1.addr == 8 and i[0].insn.Op1.reg in i[1]['alloc_vtable'].regs and 1 in i[1]['allocator'].regs,
-        track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
-    )
-    if displ_call_res: return True
-
-    # Otherwise, see if we first read out the function pointer separately and then do a call on a register
-    allocfn_res = find(
-        lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_displ and i[0].insn.Op2.addr == 8 and i[0].insn.Op2.reg in i[1]['alloc_vtable'].regs,
-        track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
-    )
-    if not allocfn_res: return False
-    allocfn_insn, at_allocfn_insn_values = allocfn_res
-    after_allocfn_insn_values = { **at_allocfn_insn_values, 'allocfn': allocfn_insn.insn.Op1.reg }
-
-    call_res = find(
-        lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_reg and i[0].insn.Op1.reg in i[1]['allocfn'].regs and 1 in i[1]['allocator'].regs,
-        track_values(after_allocfn_insn_values, decoded_insns_forward(allocfn_insn.ea + allocfn_insn.size, f.end_ea))
-    )
-    if call_res: return True
-
-    return False
 
 available_configs = {
     'rangers': {
@@ -240,7 +196,7 @@ available_configs = {
                     },
                 },
                 'heuristics': {
-                    'looks_like_instantiator': looks_like_instantiator_rangers,
+                    'looks_like_instantiator_strategy': 'trace_passed_allocator',
                 },
                 'rfl_member_types': [
                     'TYPE_VOID',
@@ -447,7 +403,7 @@ available_configs = {
                     },
                 },
                 'heuristics': {
-                    'looks_like_instantiator': looks_like_instantiator_rangers,
+                    'looks_like_instantiator_strategy': 'trace_passed_allocator',
                 },
                 'rfl_member_types': [
                     'TYPE_VOID',
@@ -582,7 +538,7 @@ available_configs = {
                 'resource_namespaces': {},
                 'allocator_addresses': (0x14071B3A0, 0x1406B79B0, 0x14071B410),
                 'heuristics': {
-                    'looks_like_instantiator': looks_like_instantiator_wars,
+                    'looks_like_instantiator_strategy': 'allocator_addresses',
                 },
                 'rfl_member_types': [
                     'TYPE_VOID',
@@ -634,7 +590,7 @@ available_configs = {
                 },
                 'pass_allocator': True,
                 'heuristics': {
-                    'looks_like_instantiator': looks_like_instantiator_rangers,
+                    'looks_like_instantiator_strategy': 'trace_passed_allocator',
                 },
                 'namespaces': {
                     'rfl': {
@@ -678,9 +634,11 @@ available_configs = {
                         'FxDentParameter': ['gfx', 'hh'],
                         'FxFieldScanEffectRenderParameter': ['needle', 'hh'],
                         'FxSeparableSSSParameter': ['needle', 'hh'],
-                        'FxRenderTargetSetting': ['gfx', 'hh'],
+                        'FxRenderTargetSetting': ['needle', 'hh'],
                         'FxAntiAliasing': ['needle', 'hh'],
                         'StageCommonAtmosphereParameter': ['gfx', 'hh'],
+                        'StageCommonWeatherProgressParameter': ['gfx', 'hh'],
+                        'StageCommonDecalModelParameter': ['gfx', 'hh'],
                         'FxLODParameter': ['needle', 'hh'],
                         'FxDetailParameter': ['needle', 'hh'],
                         'FxDynamicResolutionParameter': ['needle', 'hh'],
@@ -980,6 +938,14 @@ available_configs = {
                     0x1428EB420: 0x1412A0230,
                     0x1428ED700: 0x1412AB340,
                     0x1428EB450: 0x1412A0248,
+                    0x1428EBA20: 0x1412A16F0,
+                    0x1428EBA50: 0x1412A16F0,
+                    0x1428ECB90: 0x1412A9A50,
+                    0x1428ECBF0: 0x1412A9A68,
+                    0x1428ECC20: 0x1412A9A80,
+                    0x1428ECC50: 0x1412A9A98,
+                    0x1428ECC80: 0x1412A9AB0,
+                    0x1428ECCB0: 0x1412A9AC8,
                 },
                 'fixed_rfl_overrides': {
                     '?rflClass@enable@rfl@heur@@2VRflClass@fnd@hh@@B': { 'name': 'enable', 'parent': 0, 'class_size': 0, 'enum_count': 0, 'member_count': 1091802088, 'name_hash': 1093327760 },
@@ -1011,7 +977,7 @@ available_configs = {
                     '?rflClass@FxLightFieldMergeParameter@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxLightFieldMergeParameter', 'parent': 0, 'class_size': 8, 'enum_count': 0, 'member_count': 2, 'name_hash': 4215049549 },
                     '?rflClass@FxManualExposureParameter@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxManualExposureParameter', 'parent': 0, 'class_size': 4, 'enum_count': 0, 'member_count': 1, 'name_hash': 237661169 },
                     '?rflClass@FxRenderOption@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxRenderOption', 'parent': 0, 'class_size': 592, 'enum_count': 6, 'member_count': 30, 'name_hash': 4136992561 },
-                    '?rflClass@FxRenderTargetSetting@gfx@hh@@2VRflClass@fnd@3@B': { 'name': 'FxRenderTargetSetting', 'parent': 0, 'class_size': 12, 'enum_count': 1, 'member_count': 3, 'name_hash': 2833222358 },
+                    '?rflClass@FxRenderTargetSetting@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxRenderTargetSetting', 'parent': 0, 'class_size': 12, 'enum_count': 1, 'member_count': 3, 'name_hash': 2833222358 },
                     '?rflClass@FxSceneEnvironmentParameter@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxSceneEnvironmentParameter', 'parent': 0, 'class_size': 96, 'enum_count': 0, 'member_count': 14, 'name_hash': 272304859 },
                     '?rflClass@FxSSAOParameter@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxSSAOParameter', 'parent': 0, 'class_size': 112, 'enum_count': 3, 'member_count': 8, 'name_hash': 2584488613 },
                     '?rflClass@FxVfLineParameter@needle@hh@@2VRflClass@fnd@3@B': { 'name': 'FxVfLineParameter', 'parent': 0, 'class_size': 20, 'enum_count': 0, 'member_count': 5, 'name_hash': 2882690497 },

@@ -1,8 +1,11 @@
 from ida_idaapi import BADADDR
-from ida_bytes import is_code, get_full_flags, get_byte
-from ida_ua import insn_t, decode_insn, decode_prev_insn, print_insn_mnem, o_reg, o_displ
+from ida_bytes import is_code, get_full_flags, get_byte, get_word, get_dword, get_qword
+from ida_ua import insn_t, decode_insn, decode_prev_insn, print_insn_mnem, o_reg, o_displ, o_mem, o_imm, get_dtype_size
+from ida_segment import getseg, get_segm_name
 from .iterators import find
+from .segments import denuvoized_text_seg
 from .analysis_exceptions import AnalysisException
+import ctypes
 
 class DecodedInsn:
     def __init__(self, insn, ea, size):
@@ -54,6 +57,14 @@ def read_source_op_addr_from_reg_assignment(start_ea, reg, end_ea = None):
         if d.mnem == 'xor' and d.insn.Op1.reg == reg and d.insn.Op2.reg == reg:
             return 0
 
+def get_denuvo_constant(ea, size):
+    match size:
+        case 1: return ctypes.c_char(get_byte(ea)).value
+        case 2: return ctypes.c_short(get_word(ea)).value
+        case 4: return ctypes.c_long(get_dword(ea)).value
+        case 8: return ctypes.c_longlong(get_qword(ea)).value
+        case _: raise Exception('unexpected datatype') 
+
 def read_source_op_addr_from_mem_assignment_through_single_reg(start_ea, tgt_addr, end_ea = None):
     found_insn = find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.addr == tgt_addr, start_ea, end_ea)
 
@@ -63,8 +74,46 @@ def read_source_op_addr_from_mem_assignment_through_single_reg(start_ea, tgt_add
         if d.mnem == 'xor' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.reg == found_insn.insn.Op2.reg:
             return 0
 
+def read_source_op_imm_from_mem_assignment_through_denuvo_obfuscation(found_insn, start_ea):
+    def add_op(value, inner_op): return lambda x: inner_op(x) + value
+    def sub_op(value, inner_op): return lambda x: inner_op(x) - value
+    def xor_op(value, inner_op): return lambda x: inner_op(x) ^ value
+
+    total_op = lambda x: x
+
+    for d in decoded_insns_backward(found_insn.ea, start_ea):
+        if d.mnem == 'add' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_imm:
+            total_op = add_op(d.insn.Op2.value, total_op)
+            continue
+        if d.mnem == 'add' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_mem and get_segm_name(getseg(d.insn.Op2.addr)) == denuvoized_text_seg:
+            total_op = add_op(get_denuvo_constant(d.insn.Op2.addr, get_dtype_size(d.insn.Op2.dtype)), total_op)
+            continue
+        if d.mnem == 'sub' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_imm:
+            total_op = sub_op(d.insn.Op2.value, total_op)
+            continue
+        if d.mnem == 'sub' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_mem and get_segm_name(getseg(d.insn.Op2.addr)) == denuvoized_text_seg:
+            total_op = sub_op(get_denuvo_constant(d.insn.Op2.addr, get_dtype_size(d.insn.Op2.dtype)), total_op)
+            continue
+        if d.mnem == 'xor' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_imm:
+            total_op = xor_op(d.insn.Op2.value, total_op)
+            continue
+        if d.mnem == 'xor' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_mem and get_segm_name(getseg(d.insn.Op2.addr)) == denuvoized_text_seg:
+            total_op = xor_op(get_denuvo_constant(d.insn.Op2.addr, get_dtype_size(d.insn.Op2.dtype)), total_op)
+            continue
+        if d.mnem == 'mov' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_imm:
+            return ((1 << (8 * get_dtype_size(found_insn.insn.Op2.dtype))) - 1) & total_op(d.insn.Op2.value)
+        if d.mnem == 'mov' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.type == o_mem and get_segm_name(getseg(d.insn.Op2.addr)) == denuvoized_text_seg:
+            return ((1 << (8 * get_dtype_size(found_insn.insn.Op2.dtype))) - 1) & total_op(get_denuvo_constant(d.insn.Op2.addr, get_dtype_size(d.insn.Op2.dtype)))
+        if d.mnem == 'xor' and d.insn.Op1.reg == found_insn.insn.Op2.reg and d.insn.Op2.reg == found_insn.insn.Op2.reg:
+            return ((1 << (8 * get_dtype_size(found_insn.insn.Op2.dtype))) - 1) & total_op(0)
+
 def read_source_op_imm_from_mem_assignment(start_ea, addr, end_ea = None):
-    return find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.addr == addr, start_ea, end_ea).insn.Op2.value
+    assignment = find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.addr == addr, start_ea, end_ea)
+
+    if assignment.insn.Op2.type == o_imm:
+        return assignment.insn.Op2.value
+
+    return read_source_op_imm_from_mem_assignment_through_denuvo_obfuscation(assignment, start_ea)
 
 def read_source_op_imm_from_reg_assignment(start_ea, reg, end_ea = None):
     return find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.reg == reg, start_ea, end_ea).insn.Op2.value

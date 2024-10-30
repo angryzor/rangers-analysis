@@ -1,7 +1,7 @@
 import re
 from ida_name import get_name
 from ida_segment import get_segm_name, getseg
-from ida_ua import print_insn_mnem, o_phrase, o_reg, o_mem, o_near, o_imm
+from ida_ua import print_insn_mnem, o_phrase, o_reg, o_mem, o_near, o_imm, o_displ
 from ida_bytes import get_qword, get_flags, is_code, has_user_name, is_strlit
 from ida_idaapi import BADADDR
 from ida_funcs import get_func, get_fchunk
@@ -86,7 +86,52 @@ class ConstructorNotFoundException(NotFoundException):
 
 require_constructor_thunk_from_instantiator = require_wrap(VTableNotFoundException, guess_constructor_thunk_from_instantiator)
 
-looks_like_instantiator = rangers_analysis_config['heuristics']['looks_like_instantiator']
+
+def looks_like_instantiator_strategy_allocator_addresses(f):
+    return find_insn_forward(lambda d: d.mnem == 'call' and d.insn.Op1.addr in rangers_analysis_config['allocator_addresses'], f.start_ea, f.end_ea)
+
+def looks_like_instantiator_strategy_trace_passed_allocator(f):
+    # Our little tracing asm walker can't deal with multi-chunk functions, so just take the first chunk so it doesn't crash
+    f = get_fchunk(f.start_ea)
+
+    # Check if we try to read out the vtable of rcx, presumably the allocator.
+    vtbl_res = find(
+        lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_phrase and i[0].insn.Op2.reg in i[1]['allocator'].regs,
+        track_values({ 'allocator': 1 }, decoded_insns_forward(f.start_ea, f.end_ea))
+    )
+    if not vtbl_res: return False
+    vtbl_insn, at_vtbl_insn_values = vtbl_res
+    after_vtbl_insn_values = { **at_vtbl_insn_values, 'alloc_vtable': vtbl_insn.insn.Op1.reg }
+
+    # See if we do a direct call on a displacement operand
+    displ_call_res = find(
+        lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_displ and i[0].insn.Op1.addr == 8 and i[0].insn.Op1.reg in i[1]['alloc_vtable'].regs and 1 in i[1]['allocator'].regs,
+        track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
+    )
+    if displ_call_res: return True
+
+    # Otherwise, see if we first read out the function pointer separately and then do a call on a register
+    allocfn_res = find(
+        lambda i: i[0].mnem == 'mov' and i[0].insn.Op1.type == o_reg and i[0].insn.Op2.type == o_displ and i[0].insn.Op2.addr == 8 and i[0].insn.Op2.reg in i[1]['alloc_vtable'].regs,
+        track_values(after_vtbl_insn_values, decoded_insns_forward(vtbl_insn.ea + vtbl_insn.size, f.end_ea))
+    )
+    if not allocfn_res: return False
+    allocfn_insn, at_allocfn_insn_values = allocfn_res
+    after_allocfn_insn_values = { **at_allocfn_insn_values, 'allocfn': allocfn_insn.insn.Op1.reg }
+
+    call_res = find(
+        lambda i: i[0].mnem == 'call' and i[0].insn.Op1.type == o_reg and i[0].insn.Op1.reg in i[1]['allocfn'].regs and 1 in i[1]['allocator'].regs,
+        track_values(after_allocfn_insn_values, decoded_insns_forward(allocfn_insn.ea + allocfn_insn.size, f.end_ea))
+    )
+    if call_res: return True
+
+    return False
+
+def looks_like_instantiator(f):
+    match rangers_analysis_config['heuristics']['looks_like_instantiator_strategy']:
+        case 'allocator_addresses': return looks_like_instantiator_strategy_allocator_addresses(f)
+        case 'trace_passed_allocator': return looks_like_instantiator_strategy_trace_passed_allocator(f)
+        case _: raise Exception('unknown looks_like_instantiator strategy')
 
 def guess_instantiator_from_constructor(f):
     if looks_like_instantiator(f):

@@ -60,7 +60,7 @@ def handle_state_desc(xref, static_initializers):
     set_static_atexit_dtor_func_name(atexit_dtor, class_name, instance_var)
 
 def find_state_descs(static_initializers):
-    ctor_ea = require_name_ea('??0StateDescImpl@internal@ut@hh@@QEAA@PEBDP6APEAVStateDesc@23@PEAVIAllocator@fnd@csl@@@ZH@Z')
+    ctor_ea = require_name_ea('??0StateDescImpl@internal@ut@hh@@QEAA@PEBDP6APEAVStateImpl@23@PEAVIAllocator@fnd@csl@@@ZH@Z')
     
     for xref in get_safe_crefs_to(ctor_ea):
         handle_anal_exceptions(lambda: handle_state_desc(xref, static_initializers))
