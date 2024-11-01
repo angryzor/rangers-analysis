@@ -434,6 +434,9 @@ def get_tif_odr(tif):
 def set_tif_odr(tif, odr):
     netnode(tif_ordinal_odr_hash_netnode).altset(tif.get_ordinal(), odr)
 
+def invalidate_odr_hash_by_ordinal(tif_ordinal):
+    netnode(tif_ordinal_odr_hash_netnode).altdel(tif_ordinal)
+
 def is_same_odr_hash(decl, tif):
     new_odr = decl.get_odr_hash()
     existing_odr = get_tif_odr(tif)
@@ -1309,6 +1312,10 @@ def get_right_click_target_ea(ctx):
 
     print('invalid target')
 
+def get_typeinf_targets(ctx):
+    for i in ctx.chooser_selection:
+        yield int(ida_kernwin.get_chooser_data(ctx.widget_title, i)[0])
+
 class CPPParserActionHandler(ida_kernwin.action_handler_t):
     def __init__(self, cpp_parser):
         super().__init__()
@@ -1328,6 +1335,22 @@ class ViewAliasesActionHandler(CPPParserActionHandler):
             view_aliases(target)
 
         ida_kernwin.update_action_state('cppparser:view-aliases', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
+class ClearCacheActionHandler(CPPParserActionHandler):
+    def activate(self, ctx):
+        for i in get_typeinf_targets(ctx):
+            invalidate_odr_hash_by_ordinal(i)
+
+        ida_kernwin.update_action_state('cppparser:clear-cache', ida_kernwin.AST_ENABLE_ALWAYS)
+        return 0
+
+class ClearCacheActionHandler(CPPParserActionHandler):
+    def activate(self, ctx):
+        for i in get_typeinf_targets(ctx):
+            invalidate_odr_hash_by_ordinal(i)
+
+        ida_kernwin.update_action_state('cppparser:clear-whole-cache', ida_kernwin.AST_ENABLE_ALWAYS)
         return 0
 
 class SyncHandler(CPPParserActionHandler):
@@ -1360,6 +1383,8 @@ class CPPParserUIHooks(ida_kernwin.UI_Hooks):
         if ctx.widget_type in (ida_kernwin.BWN_DISASM, ida_kernwin.BWN_PSEUDOCODE):
             ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:apply-sdk-name')
             ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:view-aliases')
+        if ctx.widget_type == ida_kernwin.BWN_LOCTYPS:
+            ida_kernwin.attach_action_to_popup(widget, popup_handle, 'cppparser:clear-cache')
 
 class CPPParser:
     def __init__(self):
@@ -1387,6 +1412,10 @@ class CPPParser:
         ida_kernwin.register_action(view_aliases_action)
         ida_kernwin.update_action_state('cppparser:view-aliases', ida_kernwin.AST_ENABLE_ALWAYS)
 
+        view_aliases_action = ida_kernwin.action_desc_t('cppparser:clear-cache', 'Clear SDK type cache', ClearCacheActionHandler(self))
+        ida_kernwin.register_action(view_aliases_action)
+        ida_kernwin.update_action_state('cppparser:clear-cache', ida_kernwin.AST_ENABLE_ALWAYS)
+
         ida_kernwin.create_toolbar('cppparser', 'CPP Parser')
 
         ida_kernwin.attach_action_to_toolbar('cppparser', 'cppparser:sync')
@@ -1410,6 +1439,7 @@ class CPPParser:
 
         ida_kernwin.delete_toolbar('cppparser')
 
+        ida_kernwin.unregister_action('cppparser:clear-cache')
         ida_kernwin.unregister_action('cppparser:view-aliases')
         ida_kernwin.unregister_action('cppparser:apply-sdk-name')
         ida_kernwin.unregister_action('cppparser:alias-list')
