@@ -10,7 +10,7 @@ def find_strings(seg):
 
             if strlen > 5:
                 del_items(cur_ea, 0, strlen)
-                create_strlit(cur_ea, strlen, 0)
+                create_strlit(cur_ea, strlen, STRTYPE_C)
                 cur_ea += strlen
                 continue
         
