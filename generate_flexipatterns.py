@@ -37,7 +37,7 @@ def generate_signaturelet(f, insn):
 	var_bytes = set()
 	xrefs = []
 	xref_addrs = dict()
-	
+
 	for op in insn.insn.ops:
 		if op.type == o_void:
 			continue
@@ -62,7 +62,7 @@ def generate_signaturelet(f, insn):
 			if xref_name := get_name(ea):
 				if is_sdk_name(xref_name):
 					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'target_addr': ea, 'target_canonical_name': xref_name })
-	
+
 	pat = ''
 	for ea in range(insn.ea, insn.ea + insn.size):
 		pat += '?? ' if ea in var_bytes else f'{get_byte(ea):02x} '
@@ -106,10 +106,10 @@ def generate_signatures(f):
 	func_size = f.end_ea - f.start_ea
 
 	name = get_func_name(f.start_ea)
-	
+
 	for insn in decoded_insns_forward(f.start_ea, f.end_ea):
 		insn_siglets.append(generate_signaturelet(f, insn))
-	
+
 	insn_count = len(insn_siglets)
 	for i, subdivisions, order in subdivide_bisection(insn_count):
 		start_idx = floor(i * insn_count / subdivisions)
@@ -143,10 +143,10 @@ def main():
 
 			if has_user_name(get_full_flags(f.start_ea)) and is_sdk_name(get_func_name(f.start_ea)):
 				results.append(sig_group)
-	
+
 	for result in results:
 		result['sigs'] = [*filter(lambda sig: generate_duplicate_key(sig) not in found_duplicates, result['sigs'])]
-		
+
 	with open("out.pat.json", 'w') as file:
 		json.dump(results, file, indent=2)
 

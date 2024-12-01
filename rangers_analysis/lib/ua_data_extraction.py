@@ -63,7 +63,7 @@ def get_denuvo_constant(ea, size):
         case 2: return ctypes.c_short(get_word(ea)).value
         case 4: return ctypes.c_long(get_dword(ea)).value
         case 8: return ctypes.c_longlong(get_qword(ea)).value
-        case _: raise Exception('unexpected datatype') 
+        case _: raise Exception('unexpected datatype')
 
 def read_source_op_addr_from_mem_assignment_through_single_reg(start_ea, tgt_addr, end_ea = None):
     found_insn = find_insn_forward(lambda d: d.mnem == 'mov' and d.insn.Op1.addr == tgt_addr, start_ea, end_ea)

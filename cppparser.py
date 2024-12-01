@@ -33,6 +33,7 @@ if not conf.loaded:
     conf.set_library_file(os.path.join(os.path.dirname(__file__), 'libclang.dll'))
 
 API_LOCATION = os.environ[rangers_analysis_config['sdk_env_var']]
+UCSL_LOCATION = os.environ['UCSL_LOCATION']
 
 known_mangled_names = []
 
@@ -87,9 +88,16 @@ def get_odr_hash(self):
 
 Cursor.get_odr_hash = get_odr_hash
 
+try:
+    CursorKind.CONCEPT
+except:
+    CursorKind.CONCEPT = CursorKind(604)
+
 def parse_usr(usr):
     initial_usr = usr
     substitutions = []
+
+    # print(f'parsing usr {usr}')
 
     def expect(m):
         if m:
@@ -111,15 +119,28 @@ def parse_usr(usr):
     def parse_ident():
         return parse_re(r'[a-zA-Z0-9_]+')
     
-    def parse_template_argument():
-        expect(parse_re(r'#'))
-
+    def parse_template_argument_():
         if parse_re(f'V'):
-            parse_type()
+            t = parse_type()
             val = parse_re('[0-9]+')
+            if not val:
+                # hack due to USR ambiguity in e.g. c:@N@std@S@_Iter_traits_pointer>#V$@N@std@E@_Itraits_pointer_strategy0<
+                val = re.search(r'[0-9]+$', t).group(0)
             return val
+        if pack_header := parse_re(r'p[0-9]+'):
+            pack_size = int(pack_header[1:])
+            pack_args = []
+
+            for _ in range(0, pack_size):
+                pack_args.append(parse_template_argument_())
+
+            return ", ".join(pack_args)
 
         return parse_type()
+
+    def parse_template_argument():
+        expect(parse_re(r'#'))
+        return parse_template_argument_()
     
     def parse_template_parameter_list():
         header = parse_re(r'>[0-9]+')
@@ -180,7 +201,7 @@ def parse_usr(usr):
     def parse_non_builtin_type():
         nonlocal usr
 
-        if parse_re(r'@N@|@S@|@E@|@U@'):
+        if parse_re(r'@N@|@S@|@E@|@U@|@SA@|@EA@|@UA@'):
             name = expect(parse_ident())
             args = parse_template_argument_list()
             qualifier = f'{name}{args if args else ""}'
@@ -203,6 +224,10 @@ def parse_usr(usr):
             return parse_type()
         if parse_re(r'@T@'):
             return parse_ident()
+        if parse_re(r'@'):
+            name = expect(parse_ident())
+            rest = parse_type()
+            return f'{name}::{rest}' if rest else name
         if parse_re(r'\*'):
             return f'{parse_type()}*'
         if parse_re(f'&&'):
@@ -731,6 +756,8 @@ def handle_typedef(type):
     if existing_tif and canonical_type.kind in (TypeKind.RECORD, TypeKind.ENUM) and canonical_decl.kind != CursorKind.NO_DECL_FOUND:
         existing_canonical_tif = get_existing_tif(get_decl_name(canonical_decl))
         if existing_canonical_tif and is_same_odr_hash(canonical_decl, existing_canonical_tif):
+            if canonical_type.kind == TypeKind.RECORD:
+                get_ida_type(canonical_type)
             return existing_tif
 
     origin_tif = get_ida_type(decl.underlying_typedef_type)
@@ -1133,7 +1160,7 @@ def process_cursor(cursor):
             continue
 
 def run_sync():
-    parse_file(os.path.join(API_LOCATION, 'type-export-entry.cpp'), ['--std=c++17'])
+    parse_file(os.path.join(API_LOCATION, 'type-export-entry.cpp'), ['--std=c++20', f'-I{UCSL_LOCATION}/universal-cslib/src'])
 
 class ChooseSDKName(ida_kernwin.Choose):
     def __init__(self, names):
