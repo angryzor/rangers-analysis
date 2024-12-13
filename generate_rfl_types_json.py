@@ -34,7 +34,7 @@ import json
 rfl_enum_member_tif = require_type('hh::fnd::RflClassEnumMember')
 rfl_enum_tif = require_type('hh::fnd::RflClassEnum')
 rfl_class_member_tif = require_type('hh::fnd::RflClassMember')
-rfl_class_member_type_tif = require_type('hh::fnd::RflClassMember::Type')
+rfl_class_member_type_tif = require_type('ucsl::rfl::type_sets::rangers::MemberType')
 static_initializer_eas = find_static_initializers()
 
 rfl_class_member_type_enum = enum_type_data_t()
@@ -82,29 +82,32 @@ def emit_enum(enums, enum_ea, underlying_type = None):
 
 def emit_type(structs, enums, member_ea, typ, subtype = None):
     match find(lambda e: e.value == typ, rfl_class_member_type_enum).name:
-        case 'TYPE_VOID': return { 'type': 'void' }
-        case 'TYPE_BOOL': return { 'type': 'bool' }
-        case 'TYPE_SINT8': return { 'type': 'sint8' }
-        case 'TYPE_UINT8': return { 'type': 'uint8' }
-        case 'TYPE_SINT16': return { 'type': 'sint16' }
-        case 'TYPE_UINT16': return { 'type': 'uint16' }
-        case 'TYPE_SINT32': return { 'type': 'sint32' }
-        case 'TYPE_UINT32': return { 'type': 'uint32' }
-        case 'TYPE_SINT64': return { 'type': 'sint64' }
-        case 'TYPE_UINT64': return { 'type': 'uint64' }
-        case 'TYPE_FLOAT': return { 'type': 'float' }
-        case 'TYPE_VECTOR2': return { 'type': 'vector2' }
-        case 'TYPE_VECTOR3': return { 'type': 'vector3' }
-        case 'TYPE_VECTOR4': return { 'type': 'vector4' }
-        case 'TYPE_QUATERNION': return { 'type': 'quaternion' }
-        case 'TYPE_MATRIX34': return { 'type': 'matrix34' }
-        case 'TYPE_MATRIX44': return { 'type': 'matrix44' }
-        case 'TYPE_POINTER': return { 'type': 'pointer', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
-        case 'TYPE_ARRAY': return { 'type': 'array', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
-        case 'TYPE_SIMPLE_ARRAY': return { 'type': 'array', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
-        case 'TYPE_ENUM':
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VOID': return { 'type': 'void' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::BOOL': return { 'type': 'bool' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT8': return { 'type': 'sint8' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT8': return { 'type': 'uint8' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT16': return { 'type': 'sint16' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT16': return { 'type': 'uint16' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT32': return { 'type': 'sint32' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT32': return { 'type': 'uint32' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT64': return { 'type': 'sint64' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT64': return { 'type': 'uint64' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::FLOAT': return { 'type': 'float' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VECTOR2': return { 'type': 'vector2' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VECTOR3': return { 'type': 'vector3' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VECTOR4': return { 'type': 'vector4' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::QUATERNION': return { 'type': 'quaternion' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::MATRIX34': return { 'type': 'matrix34' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::MATRIX44': return { 'type': 'matrix44' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::POINTER': return { 'type': 'pointer', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::ARRAY': return { 'type': 'array', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SIMPLE_ARRAY': return { 'type': 'array', 'item_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::ENUM':
+            if member_ea in rangers_analysis_config['fixed_rfl_enum_assignments']:
+                return { 'type': 'enum', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'], 'enum': emit_enum(enums, rangers_analysis_config['fixed_rfl_enum_assignments'][member_ea], emit_type(structs, enums, member_ea, subtype)) }
+
             if enum_ea := get_qword(member_ea + 0x10):
-                return emit_enum(enums, enum_ea, emit_type(structs, enums, member_ea, subtype))
+                return { 'type': 'enum', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'], 'enum': emit_enum(enums, enum_ea, emit_type(structs, enums, member_ea, subtype)) }
             
             initializer_xref = require_unique(f"Can't find an enum assigned for {member_ea:x}", [*filter(is_valid_enum_assignment_xref, get_code_drefs_to(member_ea + 0x10))])
             f = require_function(initializer_xref)
@@ -119,16 +122,16 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
                     return { 'type': 'enum', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'], 'enum': emit_enum(enums, enum_ea) }
 
             raise AnalysisException("couldn't find an enum assignment")
-        case 'TYPE_STRUCT':
+        case 'ucsl::rfl::type_sets::rangers::MemberType::STRUCT':
             return { 'type': 'struct', 'struct': emit_struct(structs, get_qword(member_ea + 0x8)) }
 
-        case 'TYPE_FLAGS': return { 'type': 'flags', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'] }
-        case 'TYPE_CSTRING': return { 'type': 'cstring' }
-        case 'TYPE_STRING': return { 'type': 'string' }
-        case 'TYPE_OBJECT_ID': return { 'type': 'csetobjectid' }
-        case 'TYPE_POSITION': return { 'type': 'position' }
-        case 'TYPE_COLOR_BYTE': return { 'type': 'color8' }
-        case 'TYPE_COLOR_FLOAT': return { 'type': 'colorF' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::FLAGS': return { 'type': 'flags', 'underlying_type': emit_type(structs, enums, member_ea, subtype)['type'] }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::CSTRING': return { 'type': 'cstring' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::STRING': return { 'type': 'string' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::OBJECT_ID_V2': return { 'type': 'csetobjectid' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::POSITION': return { 'type': 'position' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::COLOR_BYTE': return { 'type': 'color8' }
+        case 'ucsl::rfl::type_sets::rangers::MemberType::COLOR_FLOAT': return { 'type': 'colorF' }
 
 def emit_member(structs, enums, members, member_ea):
     typ = get_byte(member_ea + 0x18)
@@ -153,11 +156,18 @@ def emit_struct(structs, rfl_class_ea):
 
         parent_ea = rangers_analysis_config['fixed_rfl_overrides'][m]['parent']
 
+        enums_count = rangers_analysis_config['fixed_rfl_overrides'][m]['enum_count']
+        if enums_count > 0:
+            enums_name = create_name('?{0}@0QBV{1}@B', ['rflClassEnums', *generated_class_name(name, 'rfl')], ['RflClassEnum', 'fnd', 'hh'])
+            enums_ea = get_name_ea(BADADDR, enums_name)
+            if enums_ea == BADADDR:
+                raise AnalysisException(f"couldn't find override class enum name {enums_name}")
+
+        members_count = rangers_analysis_config['fixed_rfl_overrides'][m]['member_count']
         members_name = create_name('?{0}@0QBV{1}@B', ['rflClassMembers', *generated_class_name(name, 'rfl')], ['RflClassMember', 'fnd', 'hh'])
         members_ea = get_name_ea(BADADDR, members_name)
         if members_ea == BADADDR:
             raise AnalysisException(f"couldn't find override class member name {members_name}")
-        members_count = rangers_analysis_config['fixed_rfl_overrides'][m]['member_count']
     else:
         rfl_class_cref = require_unique(f"Can't find unique non-getter xref for {rfl_class_ea:x}", [*filter(is_valid_xref, get_code_drefs_to(rfl_class_ea))])
 
@@ -183,10 +193,8 @@ def emit_struct(structs, rfl_class_ea):
 
     visited_structs.add(name)
 
-    if name not in rangers_analysis_config['fixed_rfl_overrides']:
-        # To handle unreferenced enums, we currently just skip this for the denuvo'd enums.
-        for i in range(0, enums_count):
-            emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
+    for i in range(0, enums_count):
+        emit_enum(enums, enums_ea + i * rfl_enum_tif.get_size())
     
     for i in range(0, members_count):
         emit_member(structs, enums, members, members_ea + i * rfl_class_member_tif.get_size())

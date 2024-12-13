@@ -33,7 +33,7 @@ import re
 rfl_enum_member_tif = require_type('hh::fnd::RflClassEnumMember')
 rfl_enum_tif = require_type('hh::fnd::RflClassEnum')
 rfl_class_member_tif = require_type('hh::fnd::RflClassMember')
-rfl_class_member_type_tif = require_type('hh::fnd::RflClassMember::Type')
+rfl_class_member_type_tif = require_type('ucsl::rfl::type_sets::rangers::MemberType')
 static_initializer_eas = find_static_initializers()
 
 rfl_class_member_type_enum = enum_type_data_t()
@@ -81,28 +81,28 @@ def emit_enum(enums, enum_ea, underlying_type = None):
 
 def emit_type(structs, enums, member_ea, typ, subtype = None):
     match find(lambda e: e.value == typ, rfl_class_member_type_enum).name:
-        case 'TYPE_VOID': return 'void'
-        case 'TYPE_BOOL': return 'bool'
-        case 'TYPE_SINT8': return 'int8_t'
-        case 'TYPE_UINT8': return 'uint8_t'
-        case 'TYPE_SINT16': return 'int16_t'
-        case 'TYPE_UINT16': return 'uint16_t'
-        case 'TYPE_SINT32': return 'int32_t'
-        case 'TYPE_UINT32': return 'uint32_t'
-        case 'TYPE_SINT64': return 'int64_t'
-        case 'TYPE_UINT64': return 'uint64_t'
-        case 'TYPE_FLOAT': return 'float'
-        case 'TYPE_VECTOR2': return 'csl::math::Vector2'
-        case 'TYPE_VECTOR3': return 'csl::math::Vector3'
-        case 'TYPE_VECTOR4': return 'csl::math::Vector4'
-        case 'TYPE_QUATERNION': return 'csl::math::Quaternion'
-        case 'TYPE_MATRIX34': return 'csl::math::Matrix34'
-        case 'TYPE_MATRIX44': return 'csl::math::Matrix44'
-        case 'TYPE_POINTER': return 'void*'
-        case 'TYPE_ARRAY': return f'csl::ut::MoveArray<{emit_type(structs, enums, member_ea, subtype)}>'
-        case 'TYPE_OLD_ARRAY': return f'csl::ut::MoveArray32<{emit_type(structs, enums, member_ea, subtype)}>'
-        case 'TYPE_SIMPLE_ARRAY': return f'{emit_type(structs, enums, member_ea, subtype)}*'
-        case 'TYPE_ENUM':
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VOID': return 'void'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::BOOL': return 'bool'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT8': return 'int8_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT8': return 'uint8_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT16': return 'int16_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT16': return 'uint16_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT32': return 'int32_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT32': return 'uint32_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SINT64': return 'int64_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::UINT64': return 'uint64_t'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::FLOAT': return 'float'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VECTOR2': return 'csl::math::Vector2'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VECTOR3': return 'csl::math::Vector3'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::VECTOR4': return 'csl::math::Vector4'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::QUATERNION': return 'csl::math::Quaternion'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::MATRIX34': return 'csl::math::Matrix34'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::MATRIX44': return 'csl::math::Matrix44'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::POINTER': return 'void*'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::ARRAY': return f'csl::ut::MoveArray<{emit_type(structs, enums, member_ea, subtype)}>'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::OLD_ARRAY': return f'csl::ut::MoveArray32<{emit_type(structs, enums, member_ea, subtype)}>'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::SIMPLE_ARRAY': return f'{emit_type(structs, enums, member_ea, subtype)}*'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::ENUM':
             if member_ea in rangers_analysis_config['fixed_rfl_enum_assignments']:
                 return emit_enum(enums, rangers_analysis_config['fixed_rfl_enum_assignments'][member_ea], emit_type(structs, enums, member_ea, subtype))
 
@@ -122,16 +122,17 @@ def emit_type(structs, enums, member_ea, typ, subtype = None):
                     return emit_enum(enums, enum_ea, emit_type(structs, enums, member_ea, subtype))
 
             raise AnalysisException("couldn't find an enum assignment")
-        case 'TYPE_STRUCT':
+        case 'ucsl::rfl::type_sets::rangers::MemberType::STRUCT':
             return emit_struct(structs, get_qword(member_ea + 0x8))
 
-        case 'TYPE_FLAGS': return f'csl::ut::Bitset<{emit_type(structs, enums, member_ea, subtype)}>'
-        case 'TYPE_CSTRING': return 'char*'
-        case 'TYPE_STRING': return 'csl::ut::VariableString'
-        case 'TYPE_OBJECT_ID': return 'hh::game::ObjectId'
-        case 'TYPE_POSITION': return 'csl::math::Vector3'
-        case 'TYPE_COLOR_BYTE': return 'csl::ut::Color8'
-        case 'TYPE_COLOR_FLOAT': return 'csl::ut::Colorf'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::FLAGS': return f'csl::ut::Bitset<{emit_type(structs, enums, member_ea, subtype)}>'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::CSTRING': return 'char*'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::STRING': return 'csl::ut::VariableString'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::OBJECT_ID_V1': return 'hh::game::ObjectId'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::OBJECT_ID_V2': return 'hh::game::ObjectId'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::POSITION': return 'csl::math::Vector3'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::COLOR_BYTE': return 'csl::ut::Color8'
+        case 'ucsl::rfl::type_sets::rangers::MemberType::COLOR_FLOAT': return 'csl::ut::Colorf'
 
 def emit_member(structs, enums, members, member_ea):
     typ = get_byte(member_ea + 0x18)
