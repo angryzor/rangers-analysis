@@ -22,7 +22,7 @@ transform_weights = {
 	'indefinite-registers': 0.7,
 }
 
-ignored_prefixes = ['j_', '??_7', '??_R', '??_D', '??__E', '??__F']
+ignored_prefixes = ['j_', '??_R', '??_D', '??__E', '??__F']
 
 def is_sdk_name(name):
 	return len(name) <= 200 and not any(map(lambda pfx: name.startswith(pfx), ignored_prefixes)) and demangle_name(name, 0)
@@ -55,13 +55,13 @@ def generate_signaturelet(f, insn):
 		if (ea & 0xFF00000000000000) == 0 and ea in xref_addrs:
 			if xref_name := get_name(ea):
 				if is_sdk_name(xref_name):
-					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'target_addr': ea, 'target_canonical_name': xref_name })
+					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'rel_addr_offset': insn.size, 'target_addr': ea, 'target_canonical_name': xref_name })
 
 	for ea in get_fcrefs_from(insn.ea):
 		if (ea & 0xFF00000000000000) == 0 and (ea < f.start_ea or ea >= f.end_ea) and ea in xref_addrs:
 			if xref_name := get_name(ea):
 				if is_sdk_name(xref_name):
-					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'target_addr': ea, 'target_canonical_name': xref_name })
+					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'rel_addr_offset': insn.size, 'target_addr': ea, 'target_canonical_name': xref_name })
 
 	pat = ''
 	for ea in range(insn.ea, insn.ea + insn.size):
@@ -75,7 +75,7 @@ def combine_siglets(siglets):
 
 	for sig in siglets:
 		for xref in sig['xrefs']:
-			xrefs.append({ **xref, 'offset': off + xref['offset'] })
+			xrefs.append({ **xref, 'offset': off + xref['offset'], 'rel_addr_offset': off + xref['rel_addr_offset'] })
 		off += sig['size']
 
 	return {
