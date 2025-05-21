@@ -33,7 +33,7 @@ def get_operand_ea_range(insn, op):
 
 	return insn.ea + op.offb, insn.ea + (insn.size if j >= len(ops) or ops[j].type == 0 else ops[j].offb)
 
-def generate_signaturelet(f, insn):
+def generate_signaturelet(f, insn, erase_local_displacements=False):
 	var_bytes = set()
 	xrefs = []
 	xref_addrs = dict()
@@ -42,7 +42,7 @@ def generate_signaturelet(f, insn):
 		if op.type == o_void:
 			continue
 
-		if op.type in (o_mem, o_near, o_phrase, o_displ, o_far) and (op.addr >= 0x1000000 and (op.addr & 0xFF00000000000000) == 0):
+		if (op.type in (o_mem, o_near, o_phrase, o_displ, o_far) and (op.addr >= 0x1000000 and (op.addr & 0xFF00000000000000) == 0)) or (op.type == o_displ and (op.addr & 0xFF00000000000000) == 0):
 			op_start_ea, op_end_ea = get_operand_ea_range(insn, op)
 
 			for ea in range(op_start_ea, op_end_ea):
@@ -55,19 +55,19 @@ def generate_signaturelet(f, insn):
 		if (ea & 0xFF00000000000000) == 0 and ea in xref_addrs:
 			if xref_name := get_name(ea):
 				if is_sdk_name(xref_name):
-					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'rel_addr_offset': insn.size, 'target_addr': ea, 'target_canonical_name': xref_name })
+					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'relativeAddressingOffset': insn.size, 'targetAddress': ea, 'targetCanonicalName': xref_name })
 
 	for ea in get_fcrefs_from(insn.ea):
 		if (ea & 0xFF00000000000000) == 0 and (ea < f.start_ea or ea >= f.end_ea) and ea in xref_addrs:
 			if xref_name := get_name(ea):
 				if is_sdk_name(xref_name):
-					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'rel_addr_offset': insn.size, 'target_addr': ea, 'target_canonical_name': xref_name })
+					xrefs.append({ 'offset': xref_addrs[ea] - insn.ea, 'relativeAddressingOffset': insn.size, 'targetAddress': ea, 'targetCanonicalName': xref_name })
 
 	pat = ''
 	for ea in range(insn.ea, insn.ea + insn.size):
 		pat += '?? ' if ea in var_bytes else f'{get_byte(ea):02x} '
 
-	return { 'sig': pat[:-1], 'addr': insn.ea, 'offset': insn.ea - f.start_ea, 'size': insn.size, 'xrefs': xrefs }
+	return { 'signature': pat[:-1], 'address': insn.ea, 'offset': insn.ea - f.start_ea, 'coverage': insn.size - len(var_bytes), 'size': insn.size, 'xrefs': xrefs }
 
 def combine_siglets(siglets):
 	xrefs = []
@@ -75,13 +75,14 @@ def combine_siglets(siglets):
 
 	for sig in siglets:
 		for xref in sig['xrefs']:
-			xrefs.append({ **xref, 'offset': off + xref['offset'], 'rel_addr_offset': off + xref['rel_addr_offset'] })
+			xrefs.append({ **xref, 'offset': off + xref['offset'], 'relativeAddressingOffset': off + xref['relativeAddressingOffset'] })
 		off += sig['size']
 
 	return {
-		'sig': ' '.join(map(lambda s: s['sig'], siglets)),
+		'signature': ' '.join(map(lambda s: s['signature'], siglets)),
+		'coverage': sum(map(lambda s: s['coverage'], siglets)),
 		'size': sum(map(lambda s: s['size'], siglets)),
-		'addr': siglets[0]['addr'],
+		'address': siglets[0]['address'],
 		'offset': siglets[0]['offset'],
 		'xrefs': xrefs
 	}
@@ -117,10 +118,10 @@ def generate_signatures(f):
 
 		sigs.append({ 'order': order, 'first': i == 0, 'last': i == subdivisions - 1, **combine_siglets(insn_siglets[start_idx:end_idx]) })
 
-	return { 'addr': f.start_ea, 'canonical_name': name, 'size': func_size, 'sigs': sigs }
+	return { 'address': f.start_ea, 'canonicalName': name, 'size': func_size, 'siglets': sigs }
 
 def generate_duplicate_key(sig):
-	return json.dumps({ 'sig': sig['sig'], 'xrefs': sig['xrefs'] })
+	return json.dumps({ 'signature': sig['signature'], 'xrefs': sig['xrefs'] })
 
 def main():
 	results = []
@@ -145,7 +146,7 @@ def main():
 				results.append(sig_group)
 
 	for result in results:
-		result['sigs'] = [*filter(lambda sig: generate_duplicate_key(sig) not in found_duplicates, result['sigs'])]
+		result['siglets'] = [*filter(lambda sig: generate_duplicate_key(sig) not in found_duplicates, result['siglets'])]
 
 	with open("out.pat.json", 'w') as file:
 		json.dump(results, file, indent=2)
